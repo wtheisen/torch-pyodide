@@ -15,6 +15,8 @@ def getitem_from_tensor(tensor: "Tensor", key: object) -> object:
         return masked_select_from_tensor(tensor, key)
     if not isinstance(key, tuple):
         key = (key,)
+    # numpy integers (anything with __index__) index like ints
+    key = tuple(k.__index__() if (not isinstance(k, (bool, int, T)) and hasattr(k, "__index__")) else k for k in key)
     n_real = sum(1 for k in key if k is not None and k is not Ellipsis)
     if any(k is Ellipsis for k in key):
         i = next(j for j, k in enumerate(key) if k is Ellipsis)

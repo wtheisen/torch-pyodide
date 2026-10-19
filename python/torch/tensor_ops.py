@@ -1232,55 +1232,87 @@ def square_from_tensor(tensor: "Tensor") -> "Tensor":
     return Tensor(tensor_id, out_shape, out_dtype)
 
 
-def _make_unary_from_tensor(fn_name: str):
+def _make_unary_from_tensor(fn_name: str, deriv=None):
+    """deriv(x) gives d out / d x from the (detached) input, for autograd."""
     def wrapper(tensor: "Tensor") -> "Tensor":
         from ._tensor import Tensor
+        from .autograd import _Node, is_grad_enabled
         runtime = _get_runtime()
         meta = _run_js_awaitable(getattr(runtime, fn_name)(tensor._id))
         tensor_id, out_shape, out_dtype = _js_meta_to_tuple(meta)
+        if deriv is not None and is_grad_enabled() and tensor._requires_grad:
+            result = Tensor(tensor_id, out_shape, out_dtype, _requires_grad=True)
+            result._node = _Node(result, lambda g: (g.mul(deriv(tensor.detach())),), [tensor])
+            return result
         return Tensor(tensor_id, out_shape, out_dtype)
     wrapper.__name__ = fn_name + "_from_tensor"
     return wrapper
 
 
-tan_from_tensor = _make_unary_from_tensor("tan")
-asin_from_tensor = _make_unary_from_tensor("asin")
-acos_from_tensor = _make_unary_from_tensor("acos")
-atan_from_tensor = _make_unary_from_tensor("atan")
-sinh_from_tensor = _make_unary_from_tensor("sinh")
-cosh_from_tensor = _make_unary_from_tensor("cosh")
-asinh_from_tensor = _make_unary_from_tensor("asinh")
-acosh_from_tensor = _make_unary_from_tensor("acosh")
-atanh_from_tensor = _make_unary_from_tensor("atanh")
-exp2_from_tensor = _make_unary_from_tensor("exp2")
-log2_from_tensor = _make_unary_from_tensor("log2")
-log10_from_tensor = _make_unary_from_tensor("log10")
-log1p_from_tensor = _make_unary_from_tensor("log1p")
-expm1_from_tensor = _make_unary_from_tensor("expm1")
-trunc_from_tensor = _make_unary_from_tensor("trunc")
-frac_from_tensor = _make_unary_from_tensor("frac")
-softplus_from_tensor = _make_unary_from_tensor("softplus")
-mish_from_tensor = _make_unary_from_tensor("mish")
-hardsigmoid_from_tensor = _make_unary_from_tensor("hardsigmoid")
-hardswish_from_tensor = _make_unary_from_tensor("hardswish")
-softsign_from_tensor = _make_unary_from_tensor("softsign")
-tanhshrink_from_tensor = _make_unary_from_tensor("tanhshrink")
-rsqrt_from_tensor = _make_unary_from_tensor("rsqrt")
-sign_from_tensor = _make_unary_from_tensor("sign")
-sgn_from_tensor = _make_unary_from_tensor("sgn")
-isnan_from_tensor = _make_unary_from_tensor("isnan")
-isinf_from_tensor = _make_unary_from_tensor("isinf")
-isfinite_from_tensor = _make_unary_from_tensor("isfinite")
-isposinf_from_tensor = _make_unary_from_tensor("isposinf")
-isneginf_from_tensor = _make_unary_from_tensor("isneginf")
-logical_not_from_tensor = _make_unary_from_tensor("logicalNot")
-erf_from_tensor = _make_unary_from_tensor("erf")
-erfc_from_tensor = _make_unary_from_tensor("erfc")
-lgamma_from_tensor = _make_unary_from_tensor("lgamma")
-digamma_from_tensor = _make_unary_from_tensor("digamma")
-i0_from_tensor = _make_unary_from_tensor("i0")
-deg2rad_from_tensor = _make_unary_from_tensor("deg2rad")
-rad2deg_from_tensor = _make_unary_from_tensor("rad2deg")
+_LN2, _LN10, _SQRTPI2 = 0.6931471805599453, 2.302585092994046, 1.1283791670955126
+_D = {  # derivatives, written with ops that need no autograd themselves
+    "tan": lambda x: x.tan().pow(2).add(1),
+    "asin": lambda x: x.mul(x).neg().add(1).sqrt().reciprocal(),
+    "acos": lambda x: x.mul(x).neg().add(1).sqrt().reciprocal().neg(),
+    "atan": lambda x: x.mul(x).add(1).reciprocal(),
+    "sinh": lambda x: x.cosh(),
+    "cosh": lambda x: x.sinh(),
+    "asinh": lambda x: x.mul(x).add(1).sqrt().reciprocal(),
+    "acosh": lambda x: x.mul(x).sub(1).sqrt().reciprocal(),
+    "atanh": lambda x: x.mul(x).neg().add(1).reciprocal(),
+    "exp2": lambda x: x.exp2().mul(_LN2),
+    "log2": lambda x: x.mul(_LN2).reciprocal(),
+    "log10": lambda x: x.mul(_LN10).reciprocal(),
+    "log1p": lambda x: x.add(1).reciprocal(),
+    "expm1": lambda x: x.exp(),
+    "softplus": lambda x: x.sigmoid(),
+    "softsign": lambda x: x.abs().add(1).pow(2).reciprocal(),
+    "tanhshrink": lambda x: x.tanh().pow(2),
+    "rsqrt": lambda x: x.pow(-1.5).mul(-0.5),
+    "erf": lambda x: x.mul(x).neg().exp().mul(_SQRTPI2),
+    "erfc": lambda x: x.mul(x).neg().exp().mul(-_SQRTPI2),
+    "mish": lambda x: (lambda t, s: t.add(x.mul(s).mul(t.mul(t).neg().add(1))))(x.softplus().tanh(), x.sigmoid()),
+}
+
+
+tan_from_tensor = _make_unary_from_tensor("tan", _D.get("tan"))
+asin_from_tensor = _make_unary_from_tensor("asin", _D.get("asin"))
+acos_from_tensor = _make_unary_from_tensor("acos", _D.get("acos"))
+atan_from_tensor = _make_unary_from_tensor("atan", _D.get("atan"))
+sinh_from_tensor = _make_unary_from_tensor("sinh", _D.get("sinh"))
+cosh_from_tensor = _make_unary_from_tensor("cosh", _D.get("cosh"))
+asinh_from_tensor = _make_unary_from_tensor("asinh", _D.get("asinh"))
+acosh_from_tensor = _make_unary_from_tensor("acosh", _D.get("acosh"))
+atanh_from_tensor = _make_unary_from_tensor("atanh", _D.get("atanh"))
+exp2_from_tensor = _make_unary_from_tensor("exp2", _D.get("exp2"))
+log2_from_tensor = _make_unary_from_tensor("log2", _D.get("log2"))
+log10_from_tensor = _make_unary_from_tensor("log10", _D.get("log10"))
+log1p_from_tensor = _make_unary_from_tensor("log1p", _D.get("log1p"))
+expm1_from_tensor = _make_unary_from_tensor("expm1", _D.get("expm1"))
+trunc_from_tensor = _make_unary_from_tensor("trunc", _D.get("trunc"))
+frac_from_tensor = _make_unary_from_tensor("frac", _D.get("frac"))
+softplus_from_tensor = _make_unary_from_tensor("softplus", _D.get("softplus"))
+mish_from_tensor = _make_unary_from_tensor("mish", _D.get("mish"))
+hardsigmoid_from_tensor = _make_unary_from_tensor("hardsigmoid", _D.get("hardsigmoid"))
+hardswish_from_tensor = _make_unary_from_tensor("hardswish", _D.get("hardswish"))
+softsign_from_tensor = _make_unary_from_tensor("softsign", _D.get("softsign"))
+tanhshrink_from_tensor = _make_unary_from_tensor("tanhshrink", _D.get("tanhshrink"))
+rsqrt_from_tensor = _make_unary_from_tensor("rsqrt", _D.get("rsqrt"))
+sign_from_tensor = _make_unary_from_tensor("sign", _D.get("sign"))
+sgn_from_tensor = _make_unary_from_tensor("sgn", _D.get("sgn"))
+isnan_from_tensor = _make_unary_from_tensor("isnan", _D.get("isnan"))
+isinf_from_tensor = _make_unary_from_tensor("isinf", _D.get("isinf"))
+isfinite_from_tensor = _make_unary_from_tensor("isfinite", _D.get("isfinite"))
+isposinf_from_tensor = _make_unary_from_tensor("isposinf", _D.get("isposinf"))
+isneginf_from_tensor = _make_unary_from_tensor("isneginf", _D.get("isneginf"))
+logical_not_from_tensor = _make_unary_from_tensor("logicalNot", _D.get("logicalNot"))
+erf_from_tensor = _make_unary_from_tensor("erf", _D.get("erf"))
+erfc_from_tensor = _make_unary_from_tensor("erfc", _D.get("erfc"))
+lgamma_from_tensor = _make_unary_from_tensor("lgamma", _D.get("lgamma"))
+digamma_from_tensor = _make_unary_from_tensor("digamma", _D.get("digamma"))
+i0_from_tensor = _make_unary_from_tensor("i0", _D.get("i0"))
+deg2rad_from_tensor = _make_unary_from_tensor("deg2rad", _D.get("deg2rad"))
+rad2deg_from_tensor = _make_unary_from_tensor("rad2deg", _D.get("rad2deg"))
 
 
 def relu_from_tensor(tensor: "Tensor") -> "Tensor":

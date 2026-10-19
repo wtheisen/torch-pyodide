@@ -130,6 +130,14 @@ class _CallableInt(int):
 
 @dataclass(slots=True)
 class Tensor:
+    __array_priority__ = 1000  # as in PyTorch: numpy scalar (op) tensor defers to the tensor
+
+    def __format__(self, spec: str) -> str:
+        # as in PyTorch: a 0-d tensor formats like its number
+        if spec and len(self._shape) == 0:
+            return format(self.item(), spec)
+        return format(repr(self), spec)
+
     _id: int
     _shape: list[int]
     _dtype: str
