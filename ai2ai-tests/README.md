@@ -21,5 +21,5 @@ headless Chromium uses SwiftShader).
 
 Known, accepted differences: `torch.manual_seed` streams, dtype/shape printing (`'int64'` vs `torch.int64`,
 `(2, 2)` vs `torch.Size`), `-0.0` vs `0.0`. The WebGPU backend still fails a few api.py checks
-(its kernels: lerp/addcmul/addcdiv, any/all, argmax without dim, log_softmax over dim 0, nearest upsampling, einsum-free
-bidirectional cases); the CPU backend is the default.
+(its kernels: lerp/addcmul/addcdiv, any/all, argmax without dim, log_softmax over dim 0, nearest upsampling
+); the CPU backend is the default.
