@@ -204,3 +204,35 @@ with torch.no_grad():
     T("no_grad", lambda: (det((2, 2)).requires_grad_() * 2).requires_grad)
 T("item_tolist", lambda: [det((1,)).item(), M[0].tolist()])
 T("dtype_casts", lambda: [M.int(), (M > 0).long().sum(), M.double().dtype == torch.float64, torch.tensor([1, 2]).dtype])
+
+
+# float64 stays float64, Python scalars are "weak", int tensor * float scalar is float
+def f64():
+    x = torch.tensor(1.36, dtype=torch.float64)
+    m = M.double()
+    return [x.item() == 1.36, str((x + 0.2).dtype), str((1 - m).dtype), str((m @ m.T).sum().dtype),
+            (m.sum() * 1e-5).item(), torch.tensor([1, 2]) * 0.5, (torch.tensor([1, 2]) < 1.5).float()]
+
+
+T("float64_weak_scalars", f64)
+
+
+# item and slice assignment, recorded by autograd
+def setitem():
+    t = torch.zeros(3, 4)
+    t[1, 2] = 5.0
+    t[0] = torch.tensor([1., 2., 3., 4.])
+    t[:, 0] = t[:, 0] / 100
+    t[t > 3] = -1.0
+    t[torch.tensor([2, 0]), 1] = 7.0
+    K = det((2, 2), 1.0, 30).requires_grad_()
+    img = det((4, 4), 1.0, 31)
+    out = torch.zeros(3, 3)
+    for i in range(3):
+        for j in range(3):
+            out[i, j] = (img[i:i + 2, j:j + 2] * K).sum()
+    (out ** 2).mean().backward()
+    return [t, out, K.grad]
+
+
+T("setitem_autograd", setitem)

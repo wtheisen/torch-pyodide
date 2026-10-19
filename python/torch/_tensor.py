@@ -388,44 +388,44 @@ class Tensor:
         return self.neg()
 
     def __lt__(self, other: "Tensor | float | int | bool") -> "Tensor":
-        from .tensor_ops import lt_from_tensors, _scalar_to_tensor
+        from .tensor_ops import lt_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(other, (float, int, bool)):
-            other = _scalar_to_tensor(other, self._dtype)
+            other = _scalar_to_tensor(other, _sdt(other, self._dtype))
         return lt_from_tensors(self, other)
 
     def __le__(self, other: "Tensor | float | int | bool") -> "Tensor":
-        from .tensor_ops import le_from_tensors, _scalar_to_tensor
+        from .tensor_ops import le_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(other, (float, int, bool)):
-            other = _scalar_to_tensor(other, self._dtype)
+            other = _scalar_to_tensor(other, _sdt(other, self._dtype))
         return le_from_tensors(self, other)
 
     def __gt__(self, other: "Tensor | float | int | bool") -> "Tensor":
-        from .tensor_ops import gt_from_tensors, _scalar_to_tensor
+        from .tensor_ops import gt_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(other, (float, int, bool)):
-            other = _scalar_to_tensor(other, self._dtype)
+            other = _scalar_to_tensor(other, _sdt(other, self._dtype))
         return gt_from_tensors(self, other)
 
     def __ge__(self, other: "Tensor | float | int | bool") -> "Tensor":
-        from .tensor_ops import ge_from_tensors, _scalar_to_tensor
+        from .tensor_ops import ge_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(other, (float, int, bool)):
-            other = _scalar_to_tensor(other, self._dtype)
+            other = _scalar_to_tensor(other, _sdt(other, self._dtype))
         return ge_from_tensors(self, other)
 
     def __eq__(self, other: "Tensor | float | int | bool") -> "Tensor":
-        from .tensor_ops import eq_from_tensors, _scalar_to_tensor
+        from .tensor_ops import eq_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(other, (float, int, bool)):
-            other = _scalar_to_tensor(other, self._dtype)
+            other = _scalar_to_tensor(other, _sdt(other, self._dtype))
         return eq_from_tensors(self, other)
 
     def __ne__(self, other: "Tensor | float | int | bool") -> "Tensor":
-        from .tensor_ops import ne_from_tensors, _scalar_to_tensor
+        from .tensor_ops import ne_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(other, (float, int, bool)):
-            other = _scalar_to_tensor(other, self._dtype)
+            other = _scalar_to_tensor(other, _sdt(other, self._dtype))
         return ne_from_tensors(self, other)
 
     def __pow__(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import pow_from_tensors, _scalar_to_tensor
-        return pow_from_tensors(self, other) if isinstance(other, Tensor) else pow_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import pow_from_tensors, _scalar_to_tensor, _sdt
+        return pow_from_tensors(self, other) if isinstance(other, Tensor) else pow_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def __and__(self, other: "Tensor") -> "Tensor":
         return self.mul(other)
@@ -474,35 +474,35 @@ class Tensor:
         return cholesky_from_tensor(self)
 
     def add(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import add_from_tensors, _scalar_to_tensor
+        from .tensor_ops import add_from_tensors, _scalar_to_tensor, _sdt
         from ._complex import is_complex, add as _cadd
         if is_complex(self) or is_complex(other):
             return _cadd(self, other)
-        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), self._dtype)
+        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), _sdt(other, self._dtype))
         return add_from_tensors(self, b_tensor)
 
     def sub(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import sub_from_tensors, _scalar_to_tensor
+        from .tensor_ops import sub_from_tensors, _scalar_to_tensor, _sdt
         from ._complex import is_complex, sub as _csub
         if is_complex(self) or is_complex(other):
             return _csub(self, other)
-        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), self._dtype)
+        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), _sdt(other, self._dtype))
         return sub_from_tensors(self, b_tensor)
 
     def mul(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import mul_from_tensors, _scalar_to_tensor
+        from .tensor_ops import mul_from_tensors, _scalar_to_tensor, _sdt
         from ._complex import is_complex, mul as _cmul
         if is_complex(self) or is_complex(other):
             return _cmul(self, other)
-        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), self._dtype)
+        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), _sdt(other, self._dtype))
         return mul_from_tensors(self, b_tensor)
 
     def div(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import div_from_tensors, _scalar_to_tensor
+        from .tensor_ops import div_from_tensors, _scalar_to_tensor, _sdt
         from ._complex import is_complex, div as _cdiv
         if is_complex(self) or is_complex(other):
             return _cdiv(self, other)
-        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), self._dtype)
+        b_tensor = other if isinstance(other, Tensor) else _scalar_to_tensor(float(other), _sdt(other, self._dtype))
         return div_from_tensors(self, b_tensor)
 
     def lu(self) -> tuple["Tensor", "Tensor"]:
@@ -605,47 +605,47 @@ class Tensor:
         return tensor_from_data(result_nested, new_shape, dtype=self._dtype)
 
     def pow(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import pow_from_tensors, _scalar_to_tensor
-        return pow_from_tensors(self, other) if isinstance(other, Tensor) else pow_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import pow_from_tensors, _scalar_to_tensor, _sdt
+        return pow_from_tensors(self, other) if isinstance(other, Tensor) else pow_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def atan2(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import atan2_from_tensors, _scalar_to_tensor
-        return atan2_from_tensors(self, other) if isinstance(other, Tensor) else atan2_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import atan2_from_tensors, _scalar_to_tensor, _sdt
+        return atan2_from_tensors(self, other) if isinstance(other, Tensor) else atan2_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def hypot(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import hypot_from_tensors, _scalar_to_tensor
-        return hypot_from_tensors(self, other) if isinstance(other, Tensor) else hypot_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import hypot_from_tensors, _scalar_to_tensor, _sdt
+        return hypot_from_tensors(self, other) if isinstance(other, Tensor) else hypot_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def fmod(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import fmod_from_tensors, _scalar_to_tensor
-        return fmod_from_tensors(self, other) if isinstance(other, Tensor) else fmod_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import fmod_from_tensors, _scalar_to_tensor, _sdt
+        return fmod_from_tensors(self, other) if isinstance(other, Tensor) else fmod_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def remainder(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import remainder_from_tensors, _scalar_to_tensor
-        return remainder_from_tensors(self, other) if isinstance(other, Tensor) else remainder_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import remainder_from_tensors, _scalar_to_tensor, _sdt
+        return remainder_from_tensors(self, other) if isinstance(other, Tensor) else remainder_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def fmax(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import maximum_from_tensors, _scalar_to_tensor
-        return maximum_from_tensors(self, other) if isinstance(other, Tensor) else maximum_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import maximum_from_tensors, _scalar_to_tensor, _sdt
+        return maximum_from_tensors(self, other) if isinstance(other, Tensor) else maximum_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def fmin(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import minimum_from_tensors, _scalar_to_tensor
-        return minimum_from_tensors(self, other) if isinstance(other, Tensor) else minimum_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import minimum_from_tensors, _scalar_to_tensor, _sdt
+        return minimum_from_tensors(self, other) if isinstance(other, Tensor) else minimum_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def logaddexp(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import logaddexp_from_tensors, _scalar_to_tensor
-        return logaddexp_from_tensors(self, other) if isinstance(other, Tensor) else logaddexp_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import logaddexp_from_tensors, _scalar_to_tensor, _sdt
+        return logaddexp_from_tensors(self, other) if isinstance(other, Tensor) else logaddexp_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def logaddexp2(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import logaddexp2_from_tensors, _scalar_to_tensor
-        return logaddexp2_from_tensors(self, other) if isinstance(other, Tensor) else logaddexp2_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import logaddexp2_from_tensors, _scalar_to_tensor, _sdt
+        return logaddexp2_from_tensors(self, other) if isinstance(other, Tensor) else logaddexp2_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def lerp(self, end: "Tensor | float", weight: "Tensor | float" = 0.5) -> "Tensor":
-        from .tensor_ops import lerp_from_tensors, _scalar_to_tensor
+        from .tensor_ops import lerp_from_tensors, _scalar_to_tensor, _sdt
         if isinstance(end, Tensor):
             end_t = end
         else:
-            end_t = _scalar_to_tensor(float(end), self._dtype)
+            end_t = _scalar_to_tensor(float(end), _sdt(end, self._dtype))
         if isinstance(weight, Tensor):
             weight_arg: "Tensor | float" = weight
         else:
@@ -661,48 +661,48 @@ class Tensor:
         return addcdiv_from_tensors(self, t1, t2, value)
 
     def xlogy(self, y: "Tensor | float") -> "Tensor":
-        from .tensor_ops import xlogy_from_tensors, _scalar_to_tensor
-        return xlogy_from_tensors(self, y) if isinstance(y, Tensor) else xlogy_from_tensors(self, _scalar_to_tensor(float(y), self._dtype))
+        from .tensor_ops import xlogy_from_tensors, _scalar_to_tensor, _sdt
+        return xlogy_from_tensors(self, y) if isinstance(y, Tensor) else xlogy_from_tensors(self, _scalar_to_tensor(float(y), _sdt(y, self._dtype)))
 
     def copysign(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import copysign_from_tensors, _scalar_to_tensor
-        return copysign_from_tensors(self, other) if isinstance(other, Tensor) else copysign_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import copysign_from_tensors, _scalar_to_tensor, _sdt
+        return copysign_from_tensors(self, other) if isinstance(other, Tensor) else copysign_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def nextafter(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import nextafter_from_tensors, _scalar_to_tensor
-        return nextafter_from_tensors(self, other) if isinstance(other, Tensor) else nextafter_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import nextafter_from_tensors, _scalar_to_tensor, _sdt
+        return nextafter_from_tensors(self, other) if isinstance(other, Tensor) else nextafter_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def floor_divide(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import floor_divide_from_tensors, _scalar_to_tensor
-        return floor_divide_from_tensors(self, other) if isinstance(other, Tensor) else floor_divide_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import floor_divide_from_tensors, _scalar_to_tensor, _sdt
+        return floor_divide_from_tensors(self, other) if isinstance(other, Tensor) else floor_divide_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def true_divide(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import true_divide_from_tensors, _scalar_to_tensor
-        return true_divide_from_tensors(self, other) if isinstance(other, Tensor) else true_divide_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import true_divide_from_tensors, _scalar_to_tensor, _sdt
+        return true_divide_from_tensors(self, other) if isinstance(other, Tensor) else true_divide_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def logical_and(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import logical_and_from_tensors, _scalar_to_tensor
-        return logical_and_from_tensors(self, other) if isinstance(other, Tensor) else logical_and_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import logical_and_from_tensors, _scalar_to_tensor, _sdt
+        return logical_and_from_tensors(self, other) if isinstance(other, Tensor) else logical_and_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def logical_or(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import logical_or_from_tensors, _scalar_to_tensor
-        return logical_or_from_tensors(self, other) if isinstance(other, Tensor) else logical_or_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import logical_or_from_tensors, _scalar_to_tensor, _sdt
+        return logical_or_from_tensors(self, other) if isinstance(other, Tensor) else logical_or_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def logical_xor(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import logical_xor_from_tensors, _scalar_to_tensor
-        return logical_xor_from_tensors(self, other) if isinstance(other, Tensor) else logical_xor_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import logical_xor_from_tensors, _scalar_to_tensor, _sdt
+        return logical_xor_from_tensors(self, other) if isinstance(other, Tensor) else logical_xor_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def bitwise_and(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import bitwise_and_from_tensors, _scalar_to_tensor
-        return bitwise_and_from_tensors(self, other) if isinstance(other, Tensor) else bitwise_and_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import bitwise_and_from_tensors, _scalar_to_tensor, _sdt
+        return bitwise_and_from_tensors(self, other) if isinstance(other, Tensor) else bitwise_and_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def bitwise_or(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import bitwise_or_from_tensors, _scalar_to_tensor
-        return bitwise_or_from_tensors(self, other) if isinstance(other, Tensor) else bitwise_or_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import bitwise_or_from_tensors, _scalar_to_tensor, _sdt
+        return bitwise_or_from_tensors(self, other) if isinstance(other, Tensor) else bitwise_or_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def bitwise_xor(self, other: "Tensor | float") -> "Tensor":
-        from .tensor_ops import bitwise_xor_from_tensors, _scalar_to_tensor
-        return bitwise_xor_from_tensors(self, other) if isinstance(other, Tensor) else bitwise_xor_from_tensors(self, _scalar_to_tensor(float(other), self._dtype))
+        from .tensor_ops import bitwise_xor_from_tensors, _scalar_to_tensor, _sdt
+        return bitwise_xor_from_tensors(self, other) if isinstance(other, Tensor) else bitwise_xor_from_tensors(self, _scalar_to_tensor(float(other), _sdt(other, self._dtype)))
 
     def bitwise_not(self) -> "Tensor":
         from .tensor_ops import bitwise_not_from_tensor
@@ -1477,6 +1477,10 @@ class Tensor:
     def __getitem__(self, key: object) -> object:
         from ._tensor_indexing import getitem_from_tensor
         return getitem_from_tensor(self, key)
+
+    def __setitem__(self, key: object, value: object) -> None:
+        from ._tensor_indexing import setitem_from_tensor
+        setitem_from_tensor(self, key, value)
 
 
 from .tensor_ops import (

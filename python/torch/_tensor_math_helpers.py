@@ -31,18 +31,18 @@ def norm_from_tensor(tensor: "Tensor", p: float | str = "fro") -> "Tensor":
 
 
 def radd_from_tensor(tensor: "Tensor", other: "Tensor | float") -> "Tensor":
-    from .tensor_ops import _scalar_to_tensor
+    from .tensor_ops import _scalar_to_tensor, _sdt
 
-    return tensor.add(other) if isinstance(other, tensor.__class__) else _scalar_to_tensor(float(other), tensor._dtype).add(tensor)
+    return tensor.add(other) if isinstance(other, tensor.__class__) else _scalar_to_tensor(float(other), _sdt(other, tensor._dtype)).add(tensor)
 
 
 def rsub_from_tensor(tensor: "Tensor", other: "Tensor | float") -> "Tensor":
-    from .tensor_ops import _scalar_to_tensor
+    from .tensor_ops import _scalar_to_tensor, _sdt
 
-    return tensor.neg().add(other) if isinstance(other, tensor.__class__) else _scalar_to_tensor(float(other), tensor._dtype).sub(tensor)
+    return tensor.neg().add(other) if isinstance(other, tensor.__class__) else _scalar_to_tensor(float(other), _sdt(other, tensor._dtype)).sub(tensor)
 
 
 def invert_from_tensor(tensor: "Tensor") -> "Tensor":
-    from .tensor_ops import _scalar_to_tensor
+    from .tensor_ops import _scalar_to_tensor, _sdt
 
     return _scalar_to_tensor(1.0, tensor._dtype).sub(tensor)

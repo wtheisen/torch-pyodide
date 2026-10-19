@@ -7,7 +7,7 @@ plain Python values (a {"id", "shape", "dtype"} dict for a tensor), never an
 awaitable, and _runtime._run_js_awaitable passes such values straight through.
 
 Semantics follow the WGSL kernels, including their quirks, so that both backends
-give the same answers for the Python layer. Float math is done in float32.
+give the same answers for the Python layer. Float math is done in float32, or float64 for float64 tensors.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Any, Sequence
 import numpy as np
 
 _NP = {
-    "float32": np.float32, "float16": np.float32, "bfloat16": np.float32, "float64": np.float32,
+    "float32": np.float32, "float16": np.float32, "bfloat16": np.float32, "float64": np.float64,
     "int8": np.int32, "int16": np.int32, "int32": np.int32, "int64": np.int64,
     "uint8": np.int32, "uint16": np.int32, "uint32": np.int64, "uint64": np.int64,
     "bool": np.bool_,
@@ -37,7 +37,14 @@ def _ax(dim: int, rank: int) -> int:
 
 
 def _f32(x) -> np.ndarray:
-    return np.asarray(x, dtype=np.float32)
+    a = np.asarray(x)
+    return a if a.dtype == np.float64 else a.astype(np.float32)  # float64 stays float64
+
+
+def _F(a) -> np.ndarray:
+    """float32 math, except float64 arrays stay float64."""
+    a = np.asarray(a)
+    return a if a.dtype == np.float64 else a.astype(np.float32)
 
 
 def _erf(x: np.ndarray) -> np.ndarray:
@@ -159,6 +166,8 @@ class NumpyRuntime:
     def _promote(self, a, b) -> str:
         """PyTorch type promotion (the JS kernels just keep the first operand's dtype)."""
         da, db = self._d(a), self._d(b)
+        if "float64" in (da, db):
+            return "float64"
         if _is_float(da) or _is_float(db):
             return "float32"
         if da == "bool" and db == "bool":
@@ -170,7 +179,7 @@ class NumpyRuntime:
         dt = out_dtype or self._promote(a, b)
         with np.errstate(all="ignore"):
             if _is_float(dt):
-                r = fn(x.astype(np.float32), y.astype(np.float32))
+                r = fn(x.astype(_npdt(dt)), y.astype(_npdt(dt)))
             else:
                 r = fn(x, y)
         return self._reg(r, dt)
@@ -216,7 +225,7 @@ class NumpyRuntime:
 
     def mulScalar(self, tid, value):
         x = self._g(tid)
-        return self._like(x.astype(np.float32) * np.float32(value) if _is_float(self._d(tid)) else x * value, tid)
+        return self._like(_F(x) * np.float32(value) if _is_float(self._d(tid)) else x * value, tid)
 
     def clamp(self, tid, lo, hi):
         x = self._g(tid)
@@ -241,7 +250,7 @@ class NumpyRuntime:
         return self._like(self._g(i) + np.float32(value) * self._g(t1) / self._g(t2), i)
 
     def matmul(self, a, b):
-        x, y = self._g(a).astype(np.float32), self._g(b).astype(np.float32)
+        x, y = _F(self._g(a)), _F(self._g(b))
         return self._reg(np.matmul(x, y), self._d(a) if _is_float(self._d(a)) else "float32")
 
     mm = matmul
@@ -260,7 +269,7 @@ class NumpyRuntime:
     def _un(self, tid, fn, out_dtype=None):
         x = self._g(tid)
         with np.errstate(all="ignore"):
-            r = fn(x.astype(np.float32) if x.dtype != np.bool_ or out_dtype != "bool" else x)
+            r = fn(x.astype(np.float64 if x.dtype == np.float64 else np.float32) if x.dtype != np.bool_ or out_dtype != "bool" else x)
         return self._reg(r, out_dtype or self._d(tid))
 
     def relu(self, t): return self._un(t, lambda x: np.maximum(x, 0))
@@ -336,7 +345,7 @@ class NumpyRuntime:
     # ── reductions ────────────────────────────────────────────────────────
     def _red(self, tid, fn, dtype=None):
         x = self._g(tid)
-        return self._reg(np.asarray(fn(x.astype(np.float32) if x.dtype != np.bool_ else x)), dtype or self._d(tid))
+        return self._reg(np.asarray(fn(_F(x) if x.dtype != np.bool_ else x)), dtype or self._d(tid))
 
     def sum(self, t): return self._red(t, np.sum)
     def mean(self, t): return self._red(t, np.mean)
@@ -352,26 +361,26 @@ class NumpyRuntime:
 
     def sumDim(self, t, dim, keepdim):
         x = self._g(t)
-        return self._like(np.sum(x.astype(np.float32) if _is_float(self._d(t)) else x, axis=_ax(dim, x.ndim), keepdims=bool(keepdim)), t)
+        return self._like(np.sum(_F(x) if _is_float(self._d(t)) else x, axis=_ax(dim, x.ndim), keepdims=bool(keepdim)), t)
 
     def meanDim(self, t, dim, keepdim):
-        x = self._g(t).astype(np.float32)
+        x = _F(self._g(t))
         return self._like(np.mean(x, axis=_ax(dim, x.ndim), keepdims=bool(keepdim)), t)
 
     def softmax(self, t, dim):
-        x = self._g(t).astype(np.float32)
+        x = _F(self._g(t))
         ax = _ax(dim, x.ndim)
         e = np.exp(x - np.max(x, axis=ax, keepdims=True))
         return self._like(e / np.sum(e, axis=ax, keepdims=True), t)
 
     def logSoftmax(self, t, dim):
-        x = self._g(t).astype(np.float32)
+        x = _F(self._g(t))
         ax = _ax(dim, x.ndim)
         m = np.max(x, axis=ax, keepdims=True)
         return self._like(x - m - np.log(np.sum(np.exp(x - m), axis=ax, keepdims=True)), t)
 
     def _rows(self, inp, tgt):
-        x = self._g(inp).astype(np.float32)
+        x = _F(self._g(inp))
         y = self._g(tgt).reshape(-1).astype(np.int64)
         return x.reshape(len(y), -1), y
 
@@ -403,19 +412,19 @@ class NumpyRuntime:
         p = e / e.sum(axis=1, keepdims=True)
         oh = np.zeros_like(p)
         oh[np.arange(b), np.clip(y, 0, x.shape[1] - 1)] = 1
-        go = self._g(gout).astype(np.float32).reshape(-1)
+        go = _F(self._g(gout)).reshape(-1)
         scale = 1.0 / max(1, b) if reduction == "mean" else 1.0
         g = (p - oh) * (go[0] if go.size == 1 else go.reshape(b, 1)) * np.float32(scale)
         return self._reg(g, self._d(inp))
 
     def logSoftmaxBackward(self, gout, sm, batch, classes):
-        g = self._g(gout).astype(np.float32).reshape(int(batch), int(classes))
-        s = self._g(sm).astype(np.float32).reshape(int(batch), int(classes))
+        g = _F(self._g(gout)).reshape(int(batch), int(classes))
+        s = _F(self._g(sm)).reshape(int(batch), int(classes))
         return self._reg(g - s * g.sum(axis=1, keepdims=True), self._d(gout))
 
     def softmaxBackward(self, gout, sm, batch, classes):
-        g = self._g(gout).astype(np.float32).reshape(int(batch), int(classes))
-        s = self._g(sm).astype(np.float32).reshape(int(batch), int(classes))
+        g = _F(self._g(gout)).reshape(int(batch), int(classes))
+        s = _F(self._g(sm)).reshape(int(batch), int(classes))
         return self._reg(s * (g - (g * s).sum(axis=1, keepdims=True)), self._d(gout))
 
     def maxMinBackward(self, inp, gout, mode):
@@ -426,25 +435,25 @@ class NumpyRuntime:
         return self._reg(g.reshape(self._g(inp).shape), self._d(inp))
 
     def pdist(self, t, p):
-        x = self._g(t).astype(np.float32)
+        x = _F(self._g(t))
         n = x.shape[0]
         out = [np.sum(np.abs(x[i] - x[j]) ** p) ** (1.0 / p) for i in range(n) for j in range(i + 1, n)]
         return self._reg(np.asarray(out), self._d(t))
 
     # ── optimizer steps (in place, formulas copied from the WGSL kernels) ──
     def sgdStep(self, p, g, buf, lr, momentum, wd, dampening, nesterov):
-        P, G = self._g(p).astype(np.float32), self._g(g).astype(np.float32)
+        P, G = _F(self._g(p)), _F(self._g(g))
         if wd:
             G = G + np.float32(wd) * P
         upd = G
         if momentum:
-            B = self._g(buf).astype(np.float32) * np.float32(momentum) + G * np.float32(1 - dampening)
+            B = _F(self._g(buf)) * np.float32(momentum) + G * np.float32(1 - dampening)
             self._put(buf, B)
             upd = G + np.float32(momentum) * B if nesterov else B
         self._put(p, P - np.float32(lr) * upd)
 
     def adamStep(self, p, g, m, v, lr, b1, b2, eps, wd, step_size, inv_sqrt_bc2):
-        P, G = self._g(p).astype(np.float32), self._g(g).astype(np.float32)
+        P, G = _F(self._g(p)), _F(self._g(g))
         if wd:
             G = G + np.float32(wd) * P
         M = self._g(m) * np.float32(b1) + np.float32(1 - b1) * G
@@ -454,14 +463,14 @@ class NumpyRuntime:
         self._put(p, P - (M / (np.sqrt(V) * np.float32(inv_sqrt_bc2) + np.float32(eps))) * np.float32(step_size))
 
     def adamWStep(self, p, g, m, v, lr, b1, b2, eps, wd, step_size, inv_sqrt_bc2):
-        P = self._g(p).astype(np.float32)
+        P = _F(self._g(p))
         if wd:
             P = P * np.float32(1 - lr * wd)
             self._put(p, P)
         self.adamStep(p, g, m, v, lr, b1, b2, eps, 0.0, step_size, inv_sqrt_bc2)
 
     def rmspropStep(self, p, g, sq, buf, lr, alpha, eps, wd, momentum):
-        P, G = self._g(p).astype(np.float32), self._g(g).astype(np.float32)
+        P, G = _F(self._g(p)), _F(self._g(g))
         if wd:
             G = G + np.float32(wd) * P
         S = self._g(sq) * np.float32(alpha) + np.float32(1 - alpha) * G * G
@@ -474,7 +483,7 @@ class NumpyRuntime:
         self._put(p, P - np.float32(lr) * upd)
 
     def adagradStep(self, p, g, ss, lr, eps, wd):
-        P, G = self._g(p).astype(np.float32), self._g(g).astype(np.float32)
+        P, G = _F(self._g(p)), _F(self._g(g))
         if wd:
             G = G + np.float32(wd) * P
         S = self._g(ss) + G * G
@@ -482,7 +491,7 @@ class NumpyRuntime:
         self._put(p, P - np.float32(lr) * G / (np.sqrt(S) + np.float32(eps)))
 
     def adamaxStep(self, p, g, m, u, lr, b1, b2, eps, wd, step_size, bc1):
-        P, G = self._g(p).astype(np.float32), self._g(g).astype(np.float32)
+        P, G = _F(self._g(p)), _F(self._g(g))
         if wd:
             G = G + np.float32(wd) * P
         M = self._g(m) * np.float32(b1) + np.float32(1 - b1) * G
@@ -492,7 +501,7 @@ class NumpyRuntime:
         self._put(p, P - (M / (U + np.float32(eps))) * np.float32(step_size) * np.float32(bc1))
 
     def _mv(self, p, g, m, v, b1, b2, wd):
-        P, G = self._g(p).astype(np.float32), self._g(g).astype(np.float32)
+        P, G = _F(self._g(p)), _F(self._g(g))
         if wd:
             G = G + np.float32(wd) * P
         M = self._g(m) * np.float32(b1) + np.float32(1 - b1) * G
@@ -530,7 +539,7 @@ class NumpyRuntime:
 
     def nonzero(self, t):  # flat indices + count, like the kernel
         flat = np.flatnonzero(self._g(t))
-        return _H(count=int(flat.size), indices=self._reg(flat.astype(np.float32), "float32"))
+        return _H(count=int(flat.size), indices=self._reg(_F(flat), "float32"))
 
     # ── shape ─────────────────────────────────────────────────────────────
     def reshape(self, t, shape):
@@ -685,7 +694,7 @@ class NumpyRuntime:
     def constantPad(self, t, l, r, top, bot, value): return self._pad(t, l, r, top, bot, "constant", value)
 
     def upsample2d(self, t, oh, ow, mode, align_corners):
-        x = self._g(t).astype(np.float32)
+        x = _F(self._g(t))
         H, W = x.shape[-2:]
         oh, ow = int(oh), int(ow)
         if int(mode) == 0:  # nearest
@@ -720,8 +729,8 @@ class NumpyRuntime:
             xp, (N, C, OH, OW, kh, kw), (s[0], s[1], s[2] * sh, s[3] * sw, s[2] * dh, s[3] * dw), writeable=False)
 
     def conv2d(self, inp, w, bias, stride, padding, dilation, groups):
-        x = self._g(inp).astype(np.float32)
-        K = self._g(w).astype(np.float32)
+        x = _F(self._g(inp))
+        K = _F(self._g(w))
         squeeze = x.ndim == 3
         if squeeze:
             x = x[None]
@@ -743,8 +752,8 @@ class NumpyRuntime:
         return self._reg(y[0] if squeeze else y, self._d(inp))
 
     def conv2dInputBackward(self, gout, w, in_shape, gout_shape, stride, padding):
-        g = self._g(gout).astype(np.float32).reshape([int(s) for s in gout_shape])
-        K = self._g(w).astype(np.float32)
+        g = _F(self._g(gout)).reshape([int(s) for s in gout_shape])
+        K = _F(self._g(w))
         N, C, H, W = [int(s) for s in in_shape]
         sh, sw = (list(stride) * 2)[:2]
         ph, pw = (list(padding) * 2)[:2]
@@ -757,8 +766,8 @@ class NumpyRuntime:
         return self._reg(gx[:, :, ph:ph + H, pw:pw + W], self._d(gout))
 
     def conv2dWeightBackward(self, gout, inp, w_shape, gout_shape, in_shape, stride, padding):
-        g = self._g(gout).astype(np.float32).reshape([int(s) for s in gout_shape])
-        x = self._g(inp).astype(np.float32).reshape([int(s) for s in in_shape])
+        g = _F(self._g(gout)).reshape([int(s) for s in gout_shape])
+        x = _F(self._g(inp)).reshape([int(s) for s in in_shape])
         OC, C, kh, kw = [int(s) for s in w_shape]
         sh, sw = (list(stride) * 2)[:2]
         ph, pw = (list(padding) * 2)[:2]
@@ -766,11 +775,11 @@ class NumpyRuntime:
         return self._reg(np.einsum("ncpqij,nopq->ocij", win, g, optimize=True), self._d(gout))
 
     def conv2dBiasBackward(self, gout, out_ch, gout_shape):
-        g = self._g(gout).astype(np.float32).reshape([int(s) for s in gout_shape])
+        g = _F(self._g(gout)).reshape([int(s) for s in gout_shape])
         return self._reg(g.sum(axis=(0, 2, 3)), self._d(gout))
 
     def _pool_args(self, inp, k, s, p):
-        x = self._g(inp).astype(np.float32)
+        x = _F(self._g(inp))
         squeeze = x.ndim == 3
         if squeeze:
             x = x[None]
@@ -798,7 +807,7 @@ class NumpyRuntime:
     def pool2dBackward(self, gout, inp, k, s, p, mode, count_include_pad=True):
         """ai2ai: gradient of max/avg pool2d (not in the JS runtime)."""
         x, sq, kh, kw, sh, sw, ph, pw = self._pool_args(inp, k, s, p)
-        g = self._g(gout).astype(np.float32)
+        g = _F(self._g(gout))
         if sq:
             g = g[None]
         N, C, H, W = x.shape
@@ -823,24 +832,24 @@ class NumpyRuntime:
         return self._reg(gx[0] if sq else gx, self._d(inp))
 
     def batchNorm(self, inp, w, b, rm, rv, eps):
-        x = self._g(inp).astype(np.float32)
+        x = _F(self._g(inp))
         C = x.shape[1]
         shp = [1, C] + [1] * (x.ndim - 2)
-        get = lambda tid, d: self._g(tid).astype(np.float32).reshape(shp) if tid is not None else np.full(shp, d, np.float32)
+        get = lambda tid, d: _F(self._g(tid)).reshape(shp) if tid is not None else np.full(shp, d, np.float32)
         y = (x - get(rm, 0)) / np.sqrt(get(rv, 1) + np.float32(eps)) * get(w, 1) + get(b, 0)
         return self._reg(y, self._d(inp))
 
     def layerNorm(self, inp, norm_shape, gamma, beta, eps):
-        x = self._g(inp).astype(np.float32)
+        x = _F(self._g(inp))
         n = int(np.prod([int(s) for s in norm_shape]))
         xr = x.reshape(-1, n)
         mu = xr.mean(axis=1, keepdims=True)
         var = ((xr - mu) ** 2).mean(axis=1, keepdims=True)
         y = (xr - mu) / np.sqrt(var + np.float32(eps))
         if gamma is not None:
-            y = y * self._g(gamma).astype(np.float32).reshape(1, n)
+            y = y * _F(self._g(gamma)).reshape(1, n)
         if beta is not None:
-            y = y + self._g(beta).astype(np.float32).reshape(1, n)
+            y = y + _F(self._g(beta)).reshape(1, n)
         return self._reg(y.reshape(x.shape), self._d(inp))
 
     def embedding(self, w, ind, num, dim, padding_idx):

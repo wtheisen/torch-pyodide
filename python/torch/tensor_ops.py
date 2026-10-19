@@ -32,6 +32,14 @@ def _js_handle_array_to_tensors(meta: object) -> list["Tensor"]:
     return tensors
 
 
+def _sdt(value: object, dtype: object) -> str:
+    """dtype for a Python scalar next to a tensor (PyTorch: a float scalar makes an int/bool tensor float32)."""
+    d = str(dtype).encode().decode().replace("torch.", "")
+    if isinstance(value, float) and not d.startswith(("float", "bfloat")):
+        return "float32"
+    return dtype
+
+
 def _scalar_to_tensor(value: float, dtype: str = "float32") -> "Tensor":
     from ._tensor import Tensor
     from .tensor_shape_utils import _scalar_to_tensor as _shape_scalar_to_tensor
