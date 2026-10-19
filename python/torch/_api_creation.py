@@ -389,3 +389,8 @@ def log_normal(
     if size is None:
         size = [1]
     return log_normal_from_shape(shape=size, mean=mean, std=std, dtype=dtype)
+
+
+def from_numpy(array: object) -> Tensor:
+    # a copy, not shared memory as in PyTorch
+    return tensor(array)

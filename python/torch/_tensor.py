@@ -925,6 +925,12 @@ class Tensor:
         from ._tensor_runtime_bridge import tolist_from_tensor
         return tolist_from_tensor(self)
 
+    def numpy(self, *, force: bool = False):
+        import numpy as np
+        if self.requires_grad and not force:
+            raise RuntimeError("Can't call numpy() on Tensor that requires grad. Use tensor.detach().numpy() instead.")
+        return np.array(self.tolist(), dtype=self._dtype.encode().decode().replace("torch.", ""))
+
     def split(self, split_size: int | list[int], dim: int = 0) -> list["Tensor"]:
         from ._tensor_shape_ops import split_from_tensor
         return split_from_tensor(self, split_size, dim)

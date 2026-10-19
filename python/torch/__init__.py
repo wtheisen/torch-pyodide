@@ -38,6 +38,7 @@ from ._api_creation import (
     randperm,
     seed,
     tensor,
+    from_numpy,
     zeros,
     zeros_like,
 )
@@ -197,6 +198,7 @@ __all__ = [
     "Tensor",
     "cuda",
     "tensor",
+    "from_numpy",
     "zeros",
     "ones",
     "rand",
