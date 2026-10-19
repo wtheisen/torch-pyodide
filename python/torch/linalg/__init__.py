@@ -722,8 +722,11 @@ def _install_cpu_paths():
     slogdet_t = collections.namedtuple("slogdet", "sign logabsdet")
     qr_t = collections.namedtuple("qr", "Q R")
 
+    def _eps(A):  # PyTorch's default cutoff for float32 inputs (we compute in float64)
+        return np.finfo(np.float32).eps * max(A.shape[-2:])
+
     def _lstsq(A, B, rcond=None, driver=None):
-        x, res, rank, sv = np.linalg.lstsq(A, B, rcond=rcond)
+        x, res, rank, sv = np.linalg.lstsq(A, B, rcond=_eps(A) if rcond is None else rcond)
         return x, res, np.asarray(rank), sv
 
     impls = {
@@ -731,7 +734,7 @@ def _install_cpu_paths():
         "inv": lambda A: np.linalg.inv(A),
         "det": lambda A: np.linalg.det(A),
         "pinv": lambda A, rcond=None, hermitian=False, rtol=None, atol=None: np.linalg.pinv(
-            A, rcond=rtol if rtol is not None else (rcond if rcond is not None else 1e-15)),
+            A, rcond=rtol if rtol is not None else (rcond if rcond is not None else _eps(A))),
         "cholesky": lambda A, upper=False: np.linalg.cholesky(A).swapaxes(-1, -2) if upper else np.linalg.cholesky(A),
         "qr": lambda A, mode="reduced": tuple(np.linalg.qr(A, mode=mode)),
         "lstsq": _lstsq,

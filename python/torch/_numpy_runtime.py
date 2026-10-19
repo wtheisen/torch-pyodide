@@ -360,7 +360,11 @@ class NumpyRuntime:
     def argmin(self, t): return self._reg(np.asarray(np.argmin(self._g(t))), "int32")
     def cumsum(self, t): return self._like(np.cumsum(self._g(t).reshape(-1)).reshape(self._g(t).shape), t,
                                           None if _is_float(self._d(t)) else "int64")
-    def cumprod(self, t): return self._like(np.cumprod(self._g(t).reshape(-1)).reshape(self._g(t).shape), t)
+    def cumprod(self, t): return self._like(np.cumprod(self._g(t).reshape(-1)).reshape(self._g(t).shape), t,
+                                            None if _is_float(self._d(t)) else "int64")
+    def cumprodDim(self, t, dim):  # ai2ai: dim-aware (the JS runtime only has the flat one)
+        x = self._g(t)
+        return self._like(np.cumprod(x, axis=_ax(dim, x.ndim)), t, None if _is_float(self._d(t)) else "int64")
 
     def sumDim(self, t, dim, keepdim):
         x = self._g(t)

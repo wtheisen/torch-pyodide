@@ -446,7 +446,8 @@ def cumprod_from_tensor(tensor: "Tensor", dim: int = 0) -> "Tensor":
     from .autograd import _Node, is_grad_enabled, _grad_cumprod
 
     runtime = _get_runtime()
-    meta = _run_js_awaitable(runtime.cumprod(tensor._id))
+    meta = _run_js_awaitable(runtime.cumprodDim(tensor._id, int(dim)) if hasattr(runtime, "cumprodDim") and len(tensor._shape) > 1
+                             else runtime.cumprod(tensor._id))
     tensor_id, out_shape, out_dtype = _js_meta_to_tuple(meta)
 
     if is_grad_enabled() and tensor._requires_grad:
