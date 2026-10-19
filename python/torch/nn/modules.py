@@ -152,7 +152,7 @@ class Module:
     def to(self, device=None, dtype=None, non_blocking: bool = False) -> "Module":
         """Move/cast all parameters and buffers. Only CPU and float32 are supported."""
         # We are CPU-only; only honor dtype for the float32 case.
-        if dtype is not None and str(dtype) != "float32":
+        if dtype is not None and dtype != "float32":
             raise NotImplementedError(
                 f"dtype {dtype!r} is not supported by this runtime "
                 f"(only float32 / torch.float32 is available)."

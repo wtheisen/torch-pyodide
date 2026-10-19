@@ -24,6 +24,10 @@ def _scalar_to_tensor(value: float, dtype: str = "float32") -> Tensor:
 
 
 def _infer_shape(data: object) -> list[int]:
+    if hasattr(data, "shape") and type(data).__module__.startswith("numpy"):
+        return [int(d) for d in data.shape]  # ai2ai: numpy arrays
+    if isinstance(data, tuple):
+        data = list(data)
     if not isinstance(data, list):
         return []
     if len(data) == 0:
@@ -36,6 +40,10 @@ def _infer_shape(data: object) -> list[int]:
 
 
 def _flatten(data: object) -> list[float]:
+    if hasattr(data, "tolist") and not isinstance(data, list) and type(data).__module__.startswith("numpy"):
+        data = data.tolist()  # ai2ai: numpy arrays and scalars
+    if isinstance(data, tuple):
+        data = list(data)
     if isinstance(data, list):
         out: list[float] = []
         for item in data:

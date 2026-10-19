@@ -24,6 +24,59 @@ def _format_tensor_values(value: object) -> str:
     return repr(value)
 
 
+def _pt_format(values, dtype: str, ndim: int) -> str:
+    """ai2ai: PyTorch-style printing (aligned columns, one row per line, 4 decimals or sci)."""
+    flat = []
+
+    def walk(v):
+        if isinstance(v, list):
+            for u in v:
+                walk(u)
+        else:
+            flat.append(v)
+    walk(values)
+    is_float = dtype.startswith("float") or dtype.startswith("bfloat")
+    if dtype == "bool":
+        fmt = lambda v: "True" if v else "False"
+    elif not is_float:
+        fmt = lambda v: str(int(v))
+    else:
+        import math
+        fin = [abs(float(v)) for v in flat if math.isfinite(float(v))]
+        nz = [v for v in fin if v != 0]
+        if fin and all(float(v).is_integer() for v in flat if math.isfinite(float(v))) and max(fin) < 1e8:
+            fmt = lambda v: (f"{float(v):.0f}." if math.isfinite(float(v)) else str(float(v)))
+        elif nz and (max(nz) / min(nz) > 1000 or max(nz) > 1e8 or min(nz) < 1e-4):
+            fmt = lambda v: f"{float(v):.4e}"
+        else:
+            fmt = lambda v: f"{float(v):.4f}"
+    width = max((len(fmt(v)) for v in flat), default=0)
+    if ndim == 0:
+        return fmt(values)
+
+    def rec(v, depth):
+        if not isinstance(v, list) or not v or not isinstance(v[0], list):
+            items = v if isinstance(v, list) else [v]
+            return "[" + ", ".join(fmt(x).rjust(width) for x in items) + "]"
+        sep = "," + "\n" * max(0, ndim - depth - 2) + "\n" + " " * (7 + depth + 1)
+        return "[" + sep.join(rec(u, depth + 1) for u in v) + "]"
+    return rec(values, 0)
+
+
+class Size(tuple):
+    """ai2ai: torch.Size, a tuple that prints like PyTorch's."""
+    def __repr__(self) -> str:
+        return f"torch.Size({list(self)})"
+
+    __str__ = __repr__
+
+    def numel(self) -> int:
+        n = 1
+        for d in self:
+            n *= d
+        return n
+
+
 def _ai2ai_matmul(a, b, native):
     """ai2ai: PyTorch matmul semantics (1-d, broadcast batch dims) on top of the runtime's
     2-d and equal-batch 3-d kernels, which are the only cases it gets right."""
@@ -69,11 +122,12 @@ class Tensor:
 
     @property
     def shape(self) -> tuple[int, ...]:
-        return tuple(self._shape)
+        return Size(self._shape)
 
     @property
     def dtype(self) -> str:
-        return self._dtype
+        from . import dtype as _dtype_cls  # ai2ai: prints as torch.float32
+        return _dtype_cls(self._dtype.encode().decode() if isinstance(self._dtype, str) else self._dtype)
 
     @property
     def device(self) -> str:
@@ -214,11 +268,11 @@ class Tensor:
                 f"_dtype='{self._dtype}', _requires_grad={self._requires_grad})"
             )
         suffix = ""
-        if self._dtype not in ("float16", "float32", "float64", "bfloat16"):
-            suffix += f", dtype={self._dtype}"
+        if self._dtype not in ("float32", "int64", "bool"):
+            suffix += f", dtype=torch.{self._dtype.encode().decode()}"
         if self._requires_grad:
-            suffix += ", requires_grad=True"
-        return f"tensor({_format_tensor_values(values)}{suffix})"
+            suffix += ", grad_fn=<Backward>" if self._node is not None else ", requires_grad=True"
+        return "tensor(" + _pt_format(values, self._dtype, len(self._shape)) + suffix + ")"
 
     __str__ = __repr__
 

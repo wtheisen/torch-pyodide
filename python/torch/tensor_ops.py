@@ -13,12 +13,12 @@ def _js_meta_to_tuple(meta: object) -> tuple[int, list[int], str]:
         tensor_id = int(meta["id"])
         shape_raw = meta["shape"]
         shape = list(shape_raw.to_py() if hasattr(shape_raw, "to_py") else shape_raw)
-        dtype = str(meta["dtype"])
+        dtype = str(meta["dtype"]).replace("torch.", "")
         return tensor_id, shape, dtype
     tensor_id = int(getattr(meta, "id"))
     shape_raw = getattr(meta, "shape")
     shape = list(shape_raw.to_py() if hasattr(shape_raw, "to_py") else shape_raw)
-    dtype = str(getattr(meta, "dtype"))
+    dtype = str(getattr(meta, "dtype")).replace("torch.", "")
     return tensor_id, shape, dtype
 
 

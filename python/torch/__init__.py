@@ -43,7 +43,7 @@ from ._api_creation import (
 )
 from ._einsum_impl import einsum
 from ._runtime import _get_runtime
-from ._tensor import Tensor
+from ._tensor import Tensor, Size
 from .tensor_factories_ops import (
     arange_from_values,
     bernoulli_from_shape,
@@ -1751,21 +1751,29 @@ def scatter(tensor: Tensor, dim: int, index: Tensor, src: Tensor | float) -> Ten
 
 # ── Dtype constants ──────────────────────────────────────────────
 
-float32 = "float32"
-float16 = "float16"
-bfloat16 = "bfloat16"
-float64 = "float64"
-int8 = "int8"
-int16 = "int16"
-int32 = "int32"
-int64 = "int64"
-uint8 = "uint8"
-uint16 = "uint16"
-uint32 = "uint32"
-uint64 = "uint64"
-bool_ = "bool"
-complex64 = "complex64"
-complex128 = "complex128"
+class dtype(str):
+    """ai2ai: a dtype is still its plain name ("float32") for comparisons, but prints as torch.float32."""
+    def __repr__(self) -> str:
+        return "torch." + self.encode().decode()
+
+    __str__ = __repr__
+
+
+float32 = dtype("float32")
+float16 = dtype("float16")
+bfloat16 = dtype("bfloat16")
+float64 = dtype("float64")
+int8 = dtype("int8")
+int16 = dtype("int16")
+int32 = dtype("int32")
+int64 = dtype("int64")
+uint8 = dtype("uint8")
+uint16 = dtype("uint16")
+uint32 = dtype("uint32")
+uint64 = dtype("uint64")
+bool_ = dtype("bool")
+complex64 = dtype("complex64")
+complex128 = dtype("complex128")
 cfloat = complex64
 cdouble = complex128
 

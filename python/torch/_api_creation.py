@@ -51,6 +51,9 @@ def _infer_dtype(data: object) -> str:
     """ai2ai: PyTorch's inference: all bools -> bool, all ints -> int64, else float32."""
     if isinstance(data, Tensor):
         return data._dtype
+    kind = getattr(getattr(data, "dtype", None), "kind", None)  # ai2ai: numpy arrays
+    if kind is not None:
+        return {"b": "bool", "i": "int64", "u": "int64"}.get(kind, "float32")
     flat: list = []
 
     def walk(v):
