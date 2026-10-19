@@ -73,7 +73,9 @@ class NumpyRuntime:
     # ── registry ──────────────────────────────────────────────────────────
     def _reg(self, arr: Any, dtype: str, shape: Sequence[int] | None = None) -> dict:
         dtype = dtype.encode().decode().replace("torch.", "") if isinstance(dtype, str) else str(dtype)
-        a = np.array(arr, dtype=_npdt(dtype), copy=True)
+        # no copy: results are fresh arrays, and stored arrays are never written in place
+        # (_put replaces them), so sharing memory with an input is safe
+        a = np.asarray(arr, dtype=_npdt(dtype))
         if shape is not None:
             a = a.reshape([int(s) for s in shape])
         tid = self._next

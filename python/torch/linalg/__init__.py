@@ -690,3 +690,60 @@ __all__ = [
     "ldl_solve", "householder_product", "vecdot", "tensorinv",
     "tensorsolve", "matmul",
 ]
+
+
+# ── ai2ai: on the CPU backend these go straight to numpy's LAPACK (no autograd) ──
+def _cpu_wrap(name, impl):
+    import functools
+    orig = globals()[name]
+
+    @functools.wraps(orig)
+    def f(*args, **kwargs):
+        if not _cpu():
+            return orig(*args, **kwargs)
+        like = next(a for a in args if isinstance(a, Tensor))
+        conv = [_np(a) if isinstance(a, Tensor) else a for a in args]
+        out = impl(*conv, **kwargs)
+
+        def back(o):
+            import numpy as np
+            o = np.asarray(o)
+            if o.dtype.kind in "iu":
+                return torch.tensor(o.tolist() if o.ndim else int(o))
+            return _t(o, like)
+        return tuple(back(o) for o in out) if isinstance(out, tuple) else back(out)
+    globals()[name] = f
+
+
+def _install_cpu_paths():
+    import collections
+    import numpy as np
+    lstsq_t = collections.namedtuple("lstsq", "solution residuals rank singular_values")
+    slogdet_t = collections.namedtuple("slogdet", "sign logabsdet")
+    qr_t = collections.namedtuple("qr", "Q R")
+
+    def _lstsq(A, B, rcond=None, driver=None):
+        x, res, rank, sv = np.linalg.lstsq(A, B, rcond=rcond)
+        return x, res, np.asarray(rank), sv
+
+    impls = {
+        "solve": lambda A, B, left=True: np.linalg.solve(A, B),
+        "inv": lambda A: np.linalg.inv(A),
+        "det": lambda A: np.linalg.det(A),
+        "pinv": lambda A, rcond=None, hermitian=False, rtol=None, atol=None: np.linalg.pinv(
+            A, rcond=rtol if rtol is not None else (rcond if rcond is not None else 1e-15)),
+        "cholesky": lambda A, upper=False: np.linalg.cholesky(A).swapaxes(-1, -2) if upper else np.linalg.cholesky(A),
+        "qr": lambda A, mode="reduced": tuple(np.linalg.qr(A, mode=mode)),
+        "lstsq": _lstsq,
+        "slogdet": lambda A: tuple(np.linalg.slogdet(A)),
+        "matrix_rank": lambda A, tol=None, hermitian=False: np.asarray(np.linalg.matrix_rank(A, tol=tol)),
+    }
+    for name, impl in impls.items():
+        _cpu_wrap(name, impl)
+    wrapped_lstsq, wrapped_slogdet, wrapped_qr = globals()["lstsq"], globals()["slogdet"], globals()["qr"]
+    globals()["lstsq"] = lambda *a, **k: lstsq_t(*wrapped_lstsq(*a, **k))
+    globals()["slogdet"] = lambda *a, **k: slogdet_t(*wrapped_slogdet(*a, **k))
+    globals()["qr"] = lambda *a, **k: qr_t(*wrapped_qr(*a, **k))
+
+
+_install_cpu_paths()

@@ -44,7 +44,7 @@ from ._api_creation import (
 )
 from ._einsum_impl import einsum
 from ._runtime import _get_runtime
-from ._tensor import Tensor, Size
+from ._tensor import Tensor, Size, return_types
 from .tensor_factories_ops import (
     arange_from_values,
     bernoulli_from_shape,
@@ -1068,12 +1068,14 @@ def all(input: Tensor) -> Tensor:
     return all_from_tensor(input)
 
 
-def cumsum(input: Tensor) -> Tensor:
-    return cumsum_from_tensor(input)
+def cumsum(input: Tensor, dim: int = 0, *, dtype=None) -> Tensor:
+    out = cumsum_from_tensor(input, dim)
+    return out if dtype is None else out.to(dtype)
 
 
-def cumprod(input: Tensor) -> Tensor:
-    return cumprod_from_tensor(input)
+def cumprod(input: Tensor, dim: int = 0, *, dtype=None) -> Tensor:
+    out = cumprod_from_tensor(input, dim)
+    return out if dtype is None else out.to(dtype)
 
 
 def tril(input: Tensor, diagonal: int = 0) -> Tensor:
@@ -1731,12 +1733,12 @@ def tile(tensor: Tensor, *sizes: int) -> Tensor:
     return tensor.repeat(*sizes)
 
 
-def topk(tensor: Tensor, k: int, dim: int = -1, largest: bool = True) -> tuple[Tensor, Tensor]:
-    return topk_from_tensor(tensor, k, dim=dim, largest=largest)
+def topk(tensor: Tensor, k: int, dim: int = -1, largest: bool = True, sorted: bool = True) -> tuple[Tensor, Tensor]:
+    return tensor.topk(k, dim=dim, largest=largest)
 
 
 def sort(tensor: Tensor, dim: int = -1, descending: bool = False) -> tuple[Tensor, Tensor]:
-    return sort_from_tensor(tensor, dim=dim, descending=descending)
+    return tensor.sort(dim=dim, descending=descending)
 
 
 def gather(tensor: Tensor, dim: int, index: Tensor) -> Tensor:
@@ -1867,3 +1869,15 @@ from torch import nn as nn
 from torch import optim as optim
 from torch import jit as jit
 from torch import utils as utils
+
+
+def set_printoptions(precision: int | None = None, threshold=None, edgeitems=None, linewidth=None,
+                     profile: str | None = None, sci_mode: bool | None = None) -> None:
+    """ai2ai: precision and sci_mode are honored (the rest is accepted and ignored)."""
+    from ._tensor import _PRINT
+    if profile == "default":
+        _PRINT.update(precision=4, sci_mode=None)
+    if precision is not None:
+        import builtins
+        _PRINT["precision"] = builtins.int(precision)
+    _PRINT["sci_mode"] = sci_mode

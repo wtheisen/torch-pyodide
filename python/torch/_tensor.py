@@ -24,6 +24,21 @@ def _format_tensor_values(value: object) -> str:
     return repr(value)
 
 
+import collections as _collections
+
+_PRINT = {"precision": 4, "sci_mode": None}
+
+
+class return_types:
+    """namedtuples like torch.return_types (values, indices)."""
+    min = _collections.namedtuple("min", "values indices")
+    max = _collections.namedtuple("max", "values indices")
+    sort = _collections.namedtuple("sort", "values indices")
+    topk = _collections.namedtuple("topk", "values indices")
+    mode = _collections.namedtuple("mode", "values indices")
+    median = _collections.namedtuple("median", "values indices")
+
+
 def _pt_format(values, dtype: str, ndim: int) -> str:
     """ai2ai: PyTorch-style printing (aligned columns, one row per line, 4 decimals or sci)."""
     flat = []
@@ -47,10 +62,11 @@ def _pt_format(values, dtype: str, ndim: int) -> str:
         wide = bool(nz) and (max(nz) / min(nz) > 1000 or max(nz) > 1e8)
         if fin and all(float(v).is_integer() for v in flat if math.isfinite(float(v))) and not wide:
             fmt = lambda v: (f"{float(v):.0f}." if math.isfinite(float(v)) else str(float(v)))
-        elif nz and (max(nz) / min(nz) > 1000 or max(nz) > 1e8 or min(nz) < 1e-4):
-            fmt = lambda v: f"{float(v):.4e}"
+        elif (_PRINT["sci_mode"] is True or (_PRINT["sci_mode"] is None and nz and
+                                               (max(nz) / min(nz) > 1000 or max(nz) > 1e8 or min(nz) < 1e-4))):
+            fmt = lambda v: f"{float(v):.{_PRINT['precision']}e}"
         else:
-            fmt = lambda v: f"{float(v):.4f}"
+            fmt = lambda v: f"{float(v):.{_PRINT['precision']}f}"
     width = max((len(fmt(v)) for v in flat), default=0)
     if ndim == 0:
         return fmt(values)
@@ -81,6 +97,8 @@ class Size(tuple):
 def _ai2ai_matmul(a, b, native):
     """ai2ai: PyTorch matmul semantics (1-d, broadcast batch dims) on top of the runtime's
     2-d and equal-batch 3-d kernels, which are the only cases it gets right."""
+    if len(a._shape) == 1 and len(b._shape) == 1:  # dot product: a 0-d result
+        return native(a.reshape(1, -1), b.reshape(-1, 1)).reshape(())
     if len(a._shape) == 1:
         return _ai2ai_matmul(a.unsqueeze(0), b, native).squeeze(-2)
     if len(b._shape) == 1:
@@ -331,13 +349,13 @@ class Tensor:
 
     tile = repeat
 
-    def topk(self, k: int, dim: int = -1, largest: bool = True) -> tuple["Tensor", "Tensor"]:
+    def topk(self, k: int, dim: int = -1, largest: bool = True, sorted: bool = True) -> tuple["Tensor", "Tensor"]:
         from .tensor_ops import topk_from_tensor
-        return topk_from_tensor(self, k, dim, largest)
+        return return_types.topk(*topk_from_tensor(self, k, dim, largest))
 
     def sort(self, dim: int = -1, descending: bool = False) -> tuple["Tensor", "Tensor"]:
         from .tensor_ops import sort_from_tensor
-        return sort_from_tensor(self, dim, descending)
+        return return_types.sort(*sort_from_tensor(self, dim, descending))
 
     def gather(self, dim: int, index: "Tensor") -> "Tensor":
         from .tensor_ops import gather_from_tensor
@@ -1212,14 +1230,14 @@ class Tensor:
     def min(self, dim: int | None = None, keepdim: bool = False):
         if dim is not None:
             from .tensor_ops import min_dim_from_tensor
-            return min_dim_from_tensor(self, dim, keepdim)
+            return return_types.min(*min_dim_from_tensor(self, dim, keepdim))
         from .tensor_ops import min_from_tensor
         return min_from_tensor(self)
 
     def max(self, dim: int | None = None, keepdim: bool = False):
         if dim is not None:
             from .tensor_ops import max_dim_from_tensor
-            return max_dim_from_tensor(self, dim, keepdim)
+            return return_types.max(*max_dim_from_tensor(self, dim, keepdim))
         from .tensor_ops import max_from_tensor
         return max_from_tensor(self)
 

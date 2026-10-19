@@ -261,3 +261,20 @@ def inplace():
 
 
 T("inplace_linalg", inplace)
+
+
+# LAPACK-backed linalg, dim= on cumsum/cumprod, namedtuple returns, print options
+def linalg_more():
+    A = det((3, 3), 1.0, 36) + torch.eye(3) * 3
+    B = det((3, 2), 1.0, 37)
+    X, y = det((6, 3), 1.0, 38), det((6, 1), 1.0, 39)
+    v = det((3, 4), 1.0, 40)
+    return [torch.linalg.solve(A, B), torch.linalg.inv(A), torch.linalg.det(A), torch.linalg.lstsq(X, y).solution,
+            torch.linalg.slogdet(A).logabsdet, torch.cumsum(v, dim=1), torch.cumprod(v, dim=0),
+            v.min(1).values, v.max(dim=0).indices, torch.topk(v, 2).values, torch.sort(v, dim=1).indices]
+
+
+T("linalg_cumsum_namedtuples", linalg_more)
+torch.set_printoptions(precision=2)
+print("printoptions", torch.tensor([1.23456, 2.5]))
+torch.set_printoptions(profile="default")
