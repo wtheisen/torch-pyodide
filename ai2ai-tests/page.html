@@ -1,0 +1,14 @@
+<!doctype html><meta charset=utf-8><body><pre id=o></pre><script type=module>
+const log=s=>{document.getElementById('o').textContent+=s+'\n'};
+window.__log=[];
+try{
+ const rt=await import('./runtime.mjs'); rt.installTorchRuntime(globalThis);
+ log('webgpu:'+!!navigator.gpu+' adapter:'+!!(navigator.gpu&&await navigator.gpu.requestAdapter()));
+ const {loadPyodide}=await import('./pyodide/pyodide.mjs');
+ const py=await loadPyodide({indexURL:'./pyodide/'});
+ const buf=await (await fetch('./torch_pyodide-0.0.84-py3-none-any.whl')).arrayBuffer();
+ py.unpackArchive(buf,'wheel');
+ py.setStdout({batched:s=>log(s)}); py.setStderr({batched:s=>log('ERR '+s)});
+ window.py=py; window.__ready=true; log('ready');
+}catch(e){log('FAIL '+e.stack); window.__ready=true;}
+</script>
