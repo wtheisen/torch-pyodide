@@ -1,0 +1,15 @@
+<!doctype html><meta charset=utf-8><body><pre id=o></pre><script type=module>
+const log=s=>{document.getElementById('o').textContent+=s+'\n'};
+try{
+ const q=new URLSearchParams(location.search);
+ if(q.get('gpu')){const rt=await import('./runtime.mjs'); rt.installTorchRuntime(globalThis);}
+ globalThis.__torch_pyodide_backend__ = q.get('backend')||'auto';
+ const {loadPyodide}=await import('./pyodide/pyodide.mjs');
+ const t0=performance.now();
+ const py=await loadPyodide({indexURL:'./pyodide/'});
+ await py.loadPackage('numpy');
+ py.unpackArchive(await (await fetch('./torch-fork.tar.gz')).arrayBuffer(),'gztar');
+ py.setStdout({batched:s=>log(s)}); py.setStderr({batched:s=>log('ERR '+s)});
+ window.py=py; window.__ready=true; log('ready '+Math.round(performance.now()-t0)+'ms');
+}catch(e){log('FAIL '+e.stack); window.__ready=true;}
+</script>

@@ -1074,58 +1074,30 @@ def _grad_batch_norm(
 
     M = float(spatial_size)
     grad_x = grad_weight = grad_bias = None
+    rank = len(grad_output._shape)
+    C = grad_output._shape[1] if rank > 1 else grad_output._shape[0]
+    cshape = [1, C] + [1] * (rank - 2)  # ai2ai: per-channel vectors broadcast as (1, C, 1, ...)
+
+    def csum(t):
+        for d in range(rank - 1, -1, -1):
+            if d != 1:
+                t = sum_dim_from_tensor(t, d, keepdim=True)
+        return t  # (1, C, 1, ...)
 
     with no_grad():
-        # dL/dx_hat: gradient w.r.t. the normalized (but not affine) output.
-        # Shape: (N, C, ...), same as x.
-        if weight is not None:
-            grad_x_hat = grad_output.mul(weight)  # broadcasts (C,) over leading dims
-        else:
-            grad_x_hat = grad_output
-
-        # Per-channel reductions over dims 0, 2, 3 (for 4D) or 0 (for 2D).
-        # We use a sequential approach: sum(dim=0) then sum over remaining spatial dims.
-        rank = len(grad_x_hat._shape)
-        sum_grad_xhat = grad_x_hat
-        for d in range(rank):
-            if d == 1:
-                continue  # skip the channel dim
-            sum_grad_xhat = sum_dim_from_tensor(sum_grad_xhat, d, keepdim=True)
-        # Now sum_grad_xhat has shape (1, C, 1, 1) or (C,) for 2D.
-
-        sum_grad_xhat_xhat = grad_x_hat.mul(x_hat)
-        sum_grad_xhat_xhat = sum_dim_from_tensor(sum_grad_xhat_xhat, 0, keepdim=True)
-        for d in range(1, rank):
-            if d == 1:
-                continue
-            sum_grad_xhat_xhat = sum_dim_from_tensor(sum_grad_xhat_xhat, d, keepdim=True)
-        # Shape (1, C, 1, 1) or (C,) — same channel position.
-
+        g = grad_output
+        sum_g = csum(g)
+        sum_g_xhat = csum(g.mul(x_hat))
         if x._requires_grad:
-            # Standard BN backward (Ioffe & Szegedy):
-            # dL/dx = (1/M) * inv_std * (M * dL/dx_hat
-            #                              - sum(dL/dx_hat)
-            #                              - x_hat * sum(dL/dx_hat * x_hat))
-            # The "M * dL/dx_hat" is a constant broadcast; combine it with the
-            # other terms by factoring out inv_std.
-            term1 = grad_x_hat.mul(M)
-            grad_x = term1.sub(sum_grad_xhat).sub(x_hat.mul(sum_grad_xhat_xhat))
-            grad_x = grad_x.mul(inv_std).mul(1.0 / M)
-
+            gw = g.mul(weight.reshape(cshape)) if weight is not None else g
+            sum_gw = sum_g.mul(weight.reshape(cshape)) if weight is not None else sum_g
+            sum_gw_xhat = sum_g_xhat.mul(weight.reshape(cshape)) if weight is not None else sum_g_xhat
+            grad_x = gw.mul(M).sub(sum_gw).sub(x_hat.mul(sum_gw_xhat))
+            grad_x = grad_x.mul(inv_std.reshape(cshape)).mul(1.0 / M)
         if weight is not None and weight._requires_grad:
-            grad_weight = sum_grad_xhat_xhat.squeeze() if rank > 1 else sum_grad_xhat_xhat
-            # Need to remove all size-1 dims except the channel dim.
-            for d in range(rank - 1, -1, -1):
-                if d == 1:
-                    continue
-                grad_weight = grad_weight.squeeze(d) if grad_weight._shape[d] == 1 else grad_weight
-
+            grad_weight = sum_g_xhat.reshape([C])
         if bias is not None and bias._requires_grad:
-            grad_bias = sum_grad_xhat
-            for d in range(rank - 1, -1, -1):
-                if d == 1:
-                    continue
-                grad_bias = grad_bias.squeeze(d) if grad_bias._shape[d] == 1 else grad_bias
+            grad_bias = sum_g.reshape([C])
 
     return grad_x, grad_weight, grad_bias
 
@@ -1194,14 +1166,14 @@ def _grad_layer_norm(
             # grad_weight = sum over the non-normalized (leading) dims of
             # (grad_x_hat * x_hat). Start from `grad_x_hat * x_hat` directly
             # (shape (..., normalized_shape)) and sum over each leading dim.
-            grad_weight = grad_x_hat.mul(x_hat)
+            grad_weight = grad_output.mul(x_hat)  # ai2ai: dL/dgamma = sum(g * x_hat), not g*gamma*x_hat
             rank = len(grad_weight._shape)
             for d in range(rank - n_norm):
                 grad_weight = sum_dim_from_tensor(grad_weight, 0, keepdim=False)
 
         if bias is not None and bias._requires_grad:
             # grad_bias = sum over the non-normalized (leading) dims of grad_x_hat.
-            grad_bias = grad_x_hat
+            grad_bias = grad_output  # ai2ai: dL/dbeta = sum(g)
             rank = len(grad_bias._shape)
             for d in range(rank - n_norm):
                 grad_bias = sum_dim_from_tensor(grad_bias, 0, keepdim=False)
@@ -1276,7 +1248,7 @@ def _grad_group_norm(
                 grad_x = grad_x.to(x._dtype)
 
         if weight is not None and weight._requires_grad:
-            grad_weight = grad_x_hat.mul(x_hat.reshape(x._shape))
+            grad_weight = grad_output.mul(x_hat.reshape(x._shape))  # ai2ai: sum(g * x_hat)
             rank = len(grad_weight._shape)
             grad_weight = sum_dim_from_tensor(grad_weight, 0, keepdim=False)
             for d in range(rank - 2):
@@ -1285,7 +1257,7 @@ def _grad_group_norm(
                 grad_weight = grad_weight.to(weight._dtype)
 
         if bias is not None and bias._requires_grad:
-            grad_bias = grad_x_hat
+            grad_bias = grad_output  # ai2ai: sum(g)
             rank = len(grad_bias._shape)
             grad_bias = sum_dim_from_tensor(grad_bias, 0, keepdim=False)
             for d in range(rank - 2):

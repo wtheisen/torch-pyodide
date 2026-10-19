@@ -1688,8 +1688,8 @@ def nonzero_from_tensor(tensor: "Tensor") -> "Tensor":
     coords = []
     for dim_idx, stride in enumerate(strides):
         coord = flat_indices.floor_divide(stride).remainder(tensor.shape[dim_idx])
-        coords.append(coord.to(dtype="int64"))
-    return cat(coords, dim=1).to(dtype="int64")
+        coords.append(coord.to(dtype="int64").reshape(-1, 1))  # ai2ai: (count, 1) columns
+    return cat(coords, dim=1).to(dtype="int64") if len(coords) > 1 else coords[0]
 
 
 def roll_from_tensor(tensor: "Tensor", shifts: int | list[int], dims: int | list[int] | None = None) -> "Tensor":

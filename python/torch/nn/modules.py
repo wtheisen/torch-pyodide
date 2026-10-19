@@ -922,11 +922,7 @@ class Embedding(Module):
 
     def forward(self, x: Tensor) -> Tensor:
         from torch.tensor_nn_ops import embedding_from_tensor
-        if self.padding_idx is not None:
-            with torch.no_grad():
-                row_ids = torch.arange(self.num_embeddings, dtype=torch.long).unsqueeze(1).expand_as(self.weight)
-                pad_mask = (row_ids == self.padding_idx)
-                self.weight._set(self.weight.masked_fill(pad_mask, 0.0))
+        # ai2ai: PyTorch zeroes the padding row only at init; forward returns it as stored
         return embedding_from_tensor(self.weight, x, self.padding_idx if self.padding_idx is not None else -1)
 
 

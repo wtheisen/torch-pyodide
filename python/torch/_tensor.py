@@ -130,6 +130,20 @@ class Tensor:
         _backward_from_tensor(self, gradient, retain_graph, create_graph)
 
     def to(self, dtype: str, device: object = None) -> "Tensor":
+        if dtype is not None:
+            dtype = str(dtype).replace("torch.", "")
+        rt_cast = None
+        if dtype is not None and dtype != self._dtype:
+            from ._runtime import _get_runtime
+            rt_cast = getattr(_get_runtime(), "cast", None) if getattr(_get_runtime(), "backend", None) == "cpu" else None
+        if rt_cast is not None:  # ai2ai: real cast on the cpu backend (truncates floats -> ints)
+            from .tensor_ops import _js_meta_to_tuple
+            tid, shp, dt = _js_meta_to_tuple(rt_cast(self._id, dtype))
+            out = Tensor(tid, shp, dt, _requires_grad=self._requires_grad and dt.startswith("float"))
+            if out._requires_grad:
+                from .autograd import _Node
+                out._node = _Node(out, lambda g, src=self: (g.to(src._dtype),), [self])
+            return out
         if dtype is not None and dtype != self._dtype:
             from .tensor_factories_ops import zeros_like_from_tensor
             from .tensor_ops import add_from_tensors
@@ -306,6 +320,15 @@ class Tensor:
     def __truediv__(self, other: "Tensor | float") -> "Tensor":
         return self.div(other)
 
+    def __rtruediv__(self, other: "Tensor | float") -> "Tensor":  # ai2ai
+        return self.reciprocal().mul(other) if not isinstance(other, Tensor) else other.div(self)
+
+    def __rpow__(self, other: "Tensor | float") -> "Tensor":  # ai2ai: c ** x = exp(x ln c)
+        import math
+        if isinstance(other, Tensor):
+            return other.pow(self)
+        return self.mul(math.log(float(other))).exp()
+
     def __neg__(self) -> "Tensor":
         return self.neg()
 
@@ -384,9 +407,12 @@ class Tensor:
     def outer(self, other: "Tensor") -> "Tensor":
         return self.reshape(-1, 1) * other.reshape(1, -1)
 
-    def norm(self, p: float | str = "fro") -> "Tensor":
+    def norm(self, p: float | str = "fro", dim=None, keepdim: bool = False) -> "Tensor":
         from ._tensor_math_helpers import norm_from_tensor
-        return norm_from_tensor(self, p)
+        if dim is None:
+            return norm_from_tensor(self, p)
+        q = 2.0 if p in ("fro", None) else float(p)  # ai2ai: vector norm along dim
+        return self.abs().pow(q).sum(dim=dim, keepdim=keepdim).pow(1.0 / q)
 
     def cholesky(self) -> "Tensor":
         from ._tensor_runtime_bridge import cholesky_from_tensor
@@ -814,9 +840,11 @@ class Tensor:
         from ._tensor_runtime_bridge import transpose_from_tensor
         return transpose_from_tensor(self, dim0, dim1)
 
-    def permute(self, dims: Sequence[int]) -> "Tensor":
+    def permute(self, *dims) -> "Tensor":
         from ._tensor_runtime_bridge import permute_from_tensor
-        return permute_from_tensor(self, dims)
+        if len(dims) == 1 and isinstance(dims[0], (list, tuple)):
+            dims = dims[0]
+        return permute_from_tensor(self, [int(d) for d in dims])
 
     def expand(self, *shape: int) -> "Tensor":
         from .tensor_shape_utils import _normalize_shape_from_args
@@ -1159,7 +1187,10 @@ class Tensor:
         from .tensor_ops import var_from_tensor
         if unbiased is not None:
             correction = 1 if unbiased else 0
-        return var_from_tensor(self, dim, keepdim, correction)
+        out = var_from_tensor(self, dim, keepdim, correction)
+        if dim is None and not keepdim and list(out._shape) == [1]:
+            out = out.reshape([])  # ai2ai: full reductions are 0-d, as in PyTorch
+        return out
 
     def std(self, dim=None, keepdim: bool = False, correction: int = 1, unbiased: bool | None = None) -> "Tensor":
         return self.var(dim=dim, keepdim=keepdim, correction=correction, unbiased=unbiased).sqrt()

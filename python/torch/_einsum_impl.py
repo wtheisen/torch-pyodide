@@ -30,24 +30,26 @@ def _einsum_two(a_idx: str, b_idx: str, output_eq: str, a: Tensor, b: Tensor) ->
         if b_sum_pos == 1:
             b = b.transpose(0, 1)
         return a.matmul(b)
+    # ai2ai: put each operand's axes in a common order before broadcasting
     all_dims_str = "".join(dict.fromkeys(a_idx + b_idx))
-    a_shape_map = {c: a.shape[a_idx.index(c)] for c in a_idx}
-    b_shape_map = {c: b.shape[b_idx.index(c)] for c in b_idx}
-    a_exp = a.reshape([a_shape_map.get(c, 1) if c in a_idx else 1 for c in all_dims_str])
-    b_exp = b.reshape([b_shape_map.get(c, 1) if c in b_idx else 1 for c in all_dims_str])
-    expanded = a_exp * b_exp
-    sum_dims_list = [all_dims_str.index(c) for c in sum_dims]
-    if sum_dims_list:
-        result = expanded
-        for d in reversed(sorted(sum_dims_list)):
-            result = result.sum(dim=d)
-        if output_eq:
-            remaining_chars = "".join(c for c in all_dims_str if c not in sum_dims)
-            perm = [remaining_chars.index(c) for c in output_eq if c in remaining_chars]
-            if perm:
-                result = result.permute(perm)
-    else:
-        result = expanded
+
+    def aligned(t, idx):
+        order = sorted(range(len(idx)), key=lambda k: all_dims_str.index(idx[k]))
+        if order != list(range(len(idx))):
+            t = t.permute(order)
+        sizes = {c: t.shape[i] for i, c in enumerate(idx[k] for k in order)}
+        return t.reshape([sizes.get(c, 1) for c in all_dims_str])
+
+    expanded = aligned(a, a_idx) * aligned(b, b_idx)
+    sum_dims_list = sorted(all_dims_str.index(c) for c in sum_dims)
+    result = expanded
+    for d in reversed(sum_dims_list):
+        result = result.sum(dim=d)
+    remaining_chars = "".join(c for c in all_dims_str if c not in sum_dims)
+    if output_eq:
+        perm = [remaining_chars.index(c) for c in output_eq]
+        if perm != list(range(len(perm))):
+            result = result.permute(perm)
     return result
 
 

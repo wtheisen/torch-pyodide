@@ -47,8 +47,31 @@ def _normalize_device(device: object = None) -> None:
     raise RuntimeError(f"Only CPU device is supported, received: {device!r}.")
 
 
-def tensor(data: object, dtype: str = "float32", requires_grad: bool = False, device: object = None) -> Tensor:
+def _infer_dtype(data: object) -> str:
+    """ai2ai: PyTorch's inference: all bools -> bool, all ints -> int64, else float32."""
+    if isinstance(data, Tensor):
+        return data._dtype
+    flat: list = []
+
+    def walk(v):
+        if isinstance(v, (list, tuple)):
+            for u in v:
+                walk(u)
+        else:
+            flat.append(v)
+    walk(data)
+    if flat and all(isinstance(v, bool) for v in flat):
+        return "bool"
+    if flat and all(isinstance(v, int) and not isinstance(v, bool) for v in flat):
+        return "int64"
+    return "float32"
+
+
+def tensor(data: object, dtype: str | None = None, requires_grad: bool = False, device: object = None) -> Tensor:
     _normalize_device(device)
+    if dtype is None:
+        dtype = _infer_dtype(data)
+    dtype = str(dtype).replace("torch.", "")
     return tensor_from_data(data, dtype=dtype, requires_grad=requires_grad)
 
 

@@ -578,6 +578,11 @@ def group_norm_from_tensor(
 def _pool2d_backward_cpu(g, inp, ksize, strd, pad, mode, count_include_pad=True):
     """ai2ai: backward for max/avg pool2d, computed on the CPU (small tensors only)."""
     import torch
+    rt = _get_runtime()
+    if getattr(rt, "backend", None) == "cpu":
+        from ._tensor import Tensor
+        tid, shp, dt = _js_meta_to_tuple(rt.pool2dBackward(g._id, inp._id, ksize, strd, pad, mode, count_include_pad))
+        return Tensor(tid, shp, dt)
     x = inp.detach().tolist(); go = g.detach().tolist()
     N, C, H, W = inp.shape
     OH, OW = len(go[0][0]), len(go[0][0][0])
