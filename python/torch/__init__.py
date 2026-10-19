@@ -776,8 +776,8 @@ def ceil(x: Tensor) -> Tensor:
     return x.ceil()
 
 
-def round(x: Tensor) -> Tensor:
-    return x.round()
+def round(x: Tensor, decimals: int = 0) -> Tensor:
+    return x.round(decimals=decimals)
 
 
 def reciprocal(x: Tensor) -> Tensor:

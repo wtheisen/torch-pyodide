@@ -44,7 +44,8 @@ def _pt_format(values, dtype: str, ndim: int) -> str:
         import math
         fin = [abs(float(v)) for v in flat if math.isfinite(float(v))]
         nz = [v for v in fin if v != 0]
-        if fin and all(float(v).is_integer() for v in flat if math.isfinite(float(v))) and max(fin) < 1e8:
+        wide = bool(nz) and (max(nz) / min(nz) > 1000 or max(nz) > 1e8)
+        if fin and all(float(v).is_integer() for v in flat if math.isfinite(float(v))) and not wide:
             fmt = lambda v: (f"{float(v):.0f}." if math.isfinite(float(v)) else str(float(v)))
         elif nz and (max(nz) / min(nz) > 1000 or max(nz) > 1e8 or min(nz) < 1e-4):
             fmt = lambda v: f"{float(v):.4e}"
@@ -987,8 +988,11 @@ class Tensor:
         from .tensor_ops import ceil_from_tensor
         return ceil_from_tensor(self)
 
-    def round(self) -> "Tensor":
+    def round(self, decimals: int = 0) -> "Tensor":
         from .tensor_ops import round_from_tensor
+        if decimals:  # as PyTorch does it: scale, round half to even, scale back
+            k = 10.0 ** decimals
+            return round_from_tensor(self * k) / k
         return round_from_tensor(self)
 
     def reciprocal(self) -> "Tensor":
