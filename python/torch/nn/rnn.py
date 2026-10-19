@@ -10,7 +10,7 @@ from torch.tensor_factories_ops import tensor_from_data
 
 class RNNBase(Module):
     def __init__(self, mode: str, input_size: int, hidden_size: int,
-                 num_layers: int = 1, bias: bool = True, batch_first: bool = True,
+                 num_layers: int = 1, bias: bool = True, batch_first: bool = False,
                  dropout: float = 0.0, bidirectional: bool = False) -> None:
         super().__init__()
         self.mode = mode

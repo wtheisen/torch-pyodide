@@ -95,13 +95,13 @@ class Module:
             if keep_vars:
                 out[full] = p
             else:
-                out[full] = _serialize_tensor(p)
+                out[full] = p.detach()  # ai2ai: PyTorch returns tensors
         for name, b in self._buffers.items():
             full = f"{prefix}{name}" if not prefix else f"{prefix}.{name}"
             if keep_vars:
                 out[full] = b
             else:
-                out[full] = _serialize_tensor(b)
+                out[full] = b.detach()
         for mod_name, m in self._modules.items():
             sub_prefix = mod_name if not prefix else f"{prefix}.{mod_name}"
             m.state_dict(destination=out, prefix=sub_prefix, keep_vars=keep_vars)

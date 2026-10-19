@@ -9,7 +9,7 @@ from torch.nn.modules import Module, Linear, Dropout
 
 class MultiheadAttention(Module):
     def __init__(self, embed_dim: int, num_heads: int, dropout: float = 0.0,
-                 bias: bool = True, batch_first: bool = True) -> None:
+                 bias: bool = True, batch_first: bool = False) -> None:
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -24,7 +24,9 @@ class MultiheadAttention(Module):
 
     def forward(self, query: Tensor, key: Tensor, value: Tensor,
                 key_padding_mask: Tensor | None = None,
-                attn_mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
+                attn_mask: Tensor | None = None, need_weights: bool = True,
+                average_attn_weights: bool = True, is_causal: bool = False) -> tuple[Tensor, Tensor]:
+        _self_attn = key is query and value is query  # ai2ai: decide before transposing
         if self.batch_first:
             query = query.transpose(0, 1)
             key = key.transpose(0, 1)
@@ -37,9 +39,12 @@ class MultiheadAttention(Module):
         qkv = query.matmul(self.in_proj_weight.T) + self.in_proj_bias
         q, k_, v = qkv.chunk(3, dim=-1)
 
-        if key is not query or value is not query:
-            k_ = key.matmul(self.in_proj_weight.T[:, embed_dim:2*embed_dim]) + self.in_proj_bias[embed_dim:2*embed_dim]
-            v = value.matmul(self.in_proj_weight.T[:, 2*embed_dim:]) + self.in_proj_bias[2*embed_dim:]
+        if not _self_attn:
+            w_q, w_k, w_v = self.in_proj_weight.chunk(3, dim=0)
+            b_q, b_k, b_v = self.in_proj_bias.chunk(3, dim=0)
+            q = query.matmul(w_q.T) + b_q
+            k_ = key.matmul(w_k.T) + b_k
+            v = value.matmul(w_v.T) + b_v
 
         # Reshape for multi-head
         q = q.reshape(tgt_len, batch_size * self.num_heads, self.head_dim).transpose(0, 1)
@@ -51,7 +56,11 @@ class MultiheadAttention(Module):
         attn = q.matmul(k_.transpose(1, 2)) * scale
 
         if attn_mask is not None:
-            attn = attn + attn_mask
+            # ai2ai: boolean masks mark positions NOT allowed to attend (PyTorch semantics)
+            if str(attn_mask.dtype).replace("torch.", "") == "bool":
+                attn = attn.masked_fill(attn_mask, float("-inf"))
+            else:
+                attn = attn + attn_mask
 
         if key_padding_mask is not None:
             mask_expanded = key_padding_mask.unsqueeze(1).unsqueeze(2).expand(-1, self.num_heads, tgt_len, -1)
@@ -68,4 +77,9 @@ class MultiheadAttention(Module):
             out = out.transpose(0, 1)
 
         out = self.out_proj(out)
-        return out, attn
+        if not need_weights:
+            return out, None
+        w = attn.reshape(batch_size, self.num_heads, tgt_len, src_len)
+        if average_attn_weights:
+            w = w.mean(dim=1)
+        return out, w

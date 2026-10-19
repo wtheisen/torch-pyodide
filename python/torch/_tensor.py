@@ -24,6 +24,38 @@ def _format_tensor_values(value: object) -> str:
     return repr(value)
 
 
+def _ai2ai_matmul(a, b, native):
+    """ai2ai: PyTorch matmul semantics (1-d, broadcast batch dims) on top of the runtime's
+    2-d and equal-batch 3-d kernels, which are the only cases it gets right."""
+    if len(a._shape) == 1:
+        return _ai2ai_matmul(a.unsqueeze(0), b, native).squeeze(-2)
+    if len(b._shape) == 1:
+        return _ai2ai_matmul(a, b.unsqueeze(-1), native).squeeze(-1)
+    if len(a._shape) == 2 and len(b._shape) == 2:
+        return native(a, b)
+    n, k = a._shape[-2], a._shape[-1]
+    m = b._shape[-1]
+    if len(b._shape) == 2:
+        return native(a.reshape(-1, k), b).reshape(*a._shape[:-1], m)
+    ba, bb = list(a._shape[:-2]), list(b._shape[:-2])
+    nd = max(len(ba), len(bb))
+    ba, bb = [1] * (nd - len(ba)) + ba, [1] * (nd - len(bb)) + bb
+    batch = []
+    for x, y in zip(ba, bb):
+        if x != y and 1 not in (x, y):
+            raise RuntimeError(f"matmul: batch dims {a._shape[:-2]} and {b._shape[:-2]} do not broadcast")
+        batch.append(max(x, y))
+    a3 = a.reshape(*ba, n, k).expand(*batch, n, k).reshape(-1, n, k)
+    b3 = b.reshape(*bb, k, m).expand(*batch, k, m).reshape(-1, k, m)
+    return native(a3, b3).reshape(*batch, n, m)
+
+
+class _CallableInt(int):
+    """An int that also works as numel()."""
+    def __call__(self) -> int:
+        return int(self)
+
+
 @dataclass(slots=True)
 class Tensor:
     _id: int
@@ -53,9 +85,11 @@ class Tensor:
 
     @property
     def numel(self) -> int:
-        n = 1
+        # ai2ai: PyTorch's numel is a method; return an int that can also be called
+        n = _CallableInt(1)
         for s in self._shape:
             n *= s
+        n = _CallableInt(n)
         return n
 
     @property
@@ -178,13 +212,42 @@ class Tensor:
         return self._shape[0] if self._shape else 0
 
     def zero_(self) -> "Tensor":
-        return self
+        return self.fill_(0.0)
 
     def fill_(self, value: float) -> "Tensor":
+        import torch
+        self._set(torch.full(list(self._shape), float(value), dtype=self._dtype))
         return self
 
     def copy_(self, src: "Tensor") -> "Tensor":
-        return src
+        import torch
+        if not isinstance(src, Tensor):
+            src = torch.tensor(src, dtype=self._dtype)
+        new = (torch.zeros(list(self._shape), dtype=self._dtype) + src.detach()).detach()
+        self._set(new)
+        return self
+
+    @property
+    def data(self) -> "Tensor":
+        return self
+
+    @data.setter
+    def data(self, value: "Tensor") -> None:
+        self.copy_(value)
+
+    def __matmul__(self, other: "Tensor") -> "Tensor":
+        import torch
+        return self.matmul(other if isinstance(other, Tensor) else torch.tensor(other))
+
+    def __rmatmul__(self, other: object) -> "Tensor":
+        import torch
+        return torch.tensor(other).matmul(self)
+
+    def __imatmul__(self, other: "Tensor") -> "Tensor":
+        return self.__matmul__(other)
+
+    def t(self) -> "Tensor":
+        return self.T
 
     def narrow(self, dim: int, start: int, length: int) -> "Tensor":
         return self.slice(dim=dim, start=start, end=start + length)
@@ -304,7 +367,7 @@ class Tensor:
         from ._complex import is_complex, matmul as _cmatmul
         if is_complex(self) or is_complex(other):
             return _cmatmul(self, other)
-        return matmul_from_tensors(self, other)
+        return _ai2ai_matmul(self, other, matmul_from_tensors)
 
     def mm(self, other: "Tensor") -> "Tensor":
         return self.matmul(other)
@@ -1267,6 +1330,10 @@ class Tensor:
 
     def masked_fill(self, mask: "Tensor", value: float) -> "Tensor":
         from .tensor_ops import masked_fill_from_tensor
+        if list(mask.shape) != list(self._shape):
+            # ai2ai: broadcast the mask like PyTorch does
+            import torch
+            mask = (mask.float() + torch.zeros(list(self._shape))) > 0.5
         return masked_fill_from_tensor(self, mask, value)
 
     def nonzero(self) -> "Tensor":

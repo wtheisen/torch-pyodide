@@ -68,8 +68,7 @@ def max_pool2d_from_tensor(
     pad = [int(p) for p in padding]
     dil = [int(d) for d in dilation]
     meta = _run_js_awaitable(runtime.maxPool2d(input._id, ksize, strd, pad, dil))
-    tensor_id, out_shape, out_dtype = _js_meta_to_tuple(meta)
-    return Tensor(tensor_id, out_shape, out_dtype)
+    return _attach_pool_grad(_js_meta_to_tuple(meta), input, ksize, strd, pad, "max")
 
 
 def avg_pool2d_from_tensor(
@@ -85,8 +84,7 @@ def avg_pool2d_from_tensor(
     strd = [int(s) for s in (stride if stride is not None else kernel_size)]
     pad = [int(p) for p in padding]
     meta = _run_js_awaitable(runtime.avgPool2d(input._id, ksize, strd, pad, count_include_pad))
-    tensor_id, out_shape, out_dtype = _js_meta_to_tuple(meta)
-    return Tensor(tensor_id, out_shape, out_dtype)
+    return _attach_pool_grad(_js_meta_to_tuple(meta), input, ksize, strd, pad, "avg", count_include_pad)
 
 
 def batch_norm_from_tensor(
@@ -575,3 +573,46 @@ def group_norm_from_tensor(
     result._node = _Node(result, grad_fn, parents)
     return result
 
+
+
+def _pool2d_backward_cpu(g, inp, ksize, strd, pad, mode, count_include_pad=True):
+    """ai2ai: backward for max/avg pool2d, computed on the CPU (small tensors only)."""
+    import torch
+    x = inp.detach().tolist(); go = g.detach().tolist()
+    N, C, H, W = inp.shape
+    OH, OW = len(go[0][0]), len(go[0][0][0])
+    kh, kw = ksize; sh, sw = strd; ph, pw = pad
+    gi = [[[[0.0] * W for _ in range(H)] for _ in range(C)] for _ in range(N)]
+    for n in range(N):
+        for c in range(C):
+            xc, gc, gic = x[n][c], go[n][c], gi[n][c]
+            for oh in range(OH):
+                for ow in range(OW):
+                    h0, w0 = oh * sh - ph, ow * sw - pw
+                    cells = [(h, w) for h in range(h0, h0 + kh) for w in range(w0, w0 + kw) if 0 <= h < H and 0 <= w < W]
+                    if not cells:
+                        continue
+                    if mode == "max":
+                        bh, bw = cells[0]
+                        for h, w in cells:
+                            if xc[h][w] > xc[bh][bw]:
+                                bh, bw = h, w
+                        gic[bh][bw] += gc[oh][ow]
+                    else:
+                        cnt = kh * kw if count_include_pad else len(cells)
+                        for h, w in cells:
+                            gic[h][w] += gc[oh][ow] / cnt
+    return torch.tensor(gi, dtype=inp.dtype)
+
+
+def _attach_pool_grad(result_args, inp, ksize, strd, pad, mode, cip=True):
+    from ._tensor import Tensor
+    from .autograd import _Node, is_grad_enabled
+    tensor_id, out_shape, out_dtype = result_args
+    if is_grad_enabled() and inp._requires_grad:
+        result = Tensor(tensor_id, out_shape, out_dtype, _requires_grad=True)
+        def _fn(g, i=inp):
+            return (_pool2d_backward_cpu(g, i, ksize, strd, pad, mode, cip),)
+        result._node = _Node(result, _fn, [inp])
+        return result
+    return Tensor(tensor_id, out_shape, out_dtype)

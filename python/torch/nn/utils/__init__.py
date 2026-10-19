@@ -37,7 +37,8 @@ def clip_grad_norm_(parameters: Sequence[Tensor], max_norm: float, norm_type: fl
     if clip_coef < 1.0:
         for p in parameters:
             p.grad = p.grad.mul(clip_coef)
-    return total_norm
+    import torch
+    return torch.tensor(float(total_norm))  # ai2ai: PyTorch returns a tensor
 
 
 def clip_grad_value_(parameters: Sequence[Tensor], clip_value: float) -> None:

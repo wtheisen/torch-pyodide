@@ -12,37 +12,45 @@ from torch.nn.multihead_attention import MultiheadAttention
 class TransformerEncoderLayer(Module):
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
                  dropout: float = 0.1, activation: str = "relu",
-                 batch_first: bool = True) -> None:
+                 layer_norm_eps: float = 1e-5, batch_first: bool = False,
+                 norm_first: bool = False, bias: bool = True) -> None:
         super().__init__()
+        self.norm_first = norm_first  # ai2ai: pre-norm (GPT-2 style) support
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
         self.linear1 = Linear(d_model, dim_feedforward)
         self.dropout = Dropout(dropout)
         self.linear2 = Linear(dim_feedforward, d_model)
-        self.norm1 = LayerNorm(d_model)
-        self.norm2 = LayerNorm(d_model)
+        self.norm1 = LayerNorm(d_model, eps=layer_norm_eps)
+        self.norm2 = LayerNorm(d_model, eps=layer_norm_eps)
         self.dropout1 = Dropout(dropout)
         self.dropout2 = Dropout(dropout)
         self.activation = activation
 
+    def _sa(self, x, mask, kpm):
+        out, _ = self.self_attn(x, x, x, attn_mask=mask, key_padding_mask=kpm, need_weights=False)
+        return self.dropout1(out)
+
+    def _ff(self, x):
+        h = self.linear1(x)
+        h = h.relu() if self.activation == "relu" else h.gelu()
+        return self.dropout2(self.linear2(self.dropout(h)))
+
     def forward(self, src: Tensor, src_mask: Tensor | None = None,
-                src_key_padding_mask: Tensor | None = None) -> Tensor:
-        attn_out, _ = self.self_attn(src, src, src, attn_mask=src_mask,
-                                     key_padding_mask=src_key_padding_mask)
-        src = src + self.dropout1(attn_out)
-        src = self.norm1(src)
-        if self.activation == "relu":
-            ff_out = self.linear2(self.dropout(self.linear1(src).relu()))
+                src_key_padding_mask: Tensor | None = None, is_causal: bool = False) -> Tensor:
+        x = src
+        if self.norm_first:
+            x = x + self._sa(self.norm1(x), src_mask, src_key_padding_mask)
+            x = x + self._ff(self.norm2(x))
         else:
-            ff_out = self.linear2(self.dropout(self.linear1(src).gelu()))
-        src = src + self.dropout2(ff_out)
-        src = self.norm2(src)
-        return src
+            x = self.norm1(x + self._sa(x, src_mask, src_key_padding_mask))
+            x = self.norm2(x + self._ff(x))
+        return x
 
 
 class TransformerDecoderLayer(Module):
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int = 2048,
                  dropout: float = 0.1, activation: str = "relu",
-                 batch_first: bool = True) -> None:
+                 batch_first: bool = False) -> None:
         super().__init__()
         self.self_attn = MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
         self.multihead_attn = MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first)
@@ -111,10 +119,16 @@ class TransformerDecoder(Module):
 
 
 class Transformer(Module):
+    @staticmethod
+    def generate_square_subsequent_mask(sz: int, device=None, dtype=None) -> Tensor:
+        """ai2ai: float causal mask, 0 on and below the diagonal, -inf above (as PyTorch)."""
+        import torch
+        return torch.triu(torch.full((sz, sz), float("-inf")), diagonal=1)
+
     def __init__(self, d_model: int = 512, nhead: int = 8,
                  num_encoder_layers: int = 6, num_decoder_layers: int = 6,
                  dim_feedforward: int = 2048, dropout: float = 0.1,
-                 activation: str = "relu", batch_first: bool = True) -> None:
+                 activation: str = "relu", batch_first: bool = False) -> None:
         super().__init__()
         encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout, activation, batch_first)
         self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers)
