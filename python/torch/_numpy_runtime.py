@@ -347,21 +347,23 @@ class NumpyRuntime:
         x = self._g(tid)
         return self._reg(np.asarray(fn(_F(x) if x.dtype != np.bool_ else x)), dtype or self._d(tid))
 
-    def sum(self, t): return self._red(t, np.sum)
+    def sum(self, t): return self._red(t, np.sum, None if _is_float(self._d(t)) else "int64")
     def mean(self, t): return self._red(t, np.mean)
-    def prod(self, t): return self._red(t, np.prod)
+    def prod(self, t): return self._red(t, np.prod, None if _is_float(self._d(t)) else "int64")
     def min(self, t): return self._red(t, np.min)
     def max(self, t): return self._red(t, np.max)
     def any(self, t): return self._reg(np.asarray(np.any(self._g(t))), "bool")
     def all(self, t): return self._reg(np.asarray(np.all(self._g(t))), "bool")
     def argmax(self, t): return self._reg(np.asarray(np.argmax(self._g(t))), "int32")
     def argmin(self, t): return self._reg(np.asarray(np.argmin(self._g(t))), "int32")
-    def cumsum(self, t): return self._like(np.cumsum(self._g(t).reshape(-1)).reshape(self._g(t).shape), t)
+    def cumsum(self, t): return self._like(np.cumsum(self._g(t).reshape(-1)).reshape(self._g(t).shape), t,
+                                          None if _is_float(self._d(t)) else "int64")
     def cumprod(self, t): return self._like(np.cumprod(self._g(t).reshape(-1)).reshape(self._g(t).shape), t)
 
     def sumDim(self, t, dim, keepdim):
         x = self._g(t)
-        return self._like(np.sum(_F(x) if _is_float(self._d(t)) else x, axis=_ax(dim, x.ndim), keepdims=bool(keepdim)), t)
+        return self._like(np.sum(_F(x) if _is_float(self._d(t)) else x, axis=_ax(dim, x.ndim), keepdims=bool(keepdim)), t,
+                          None if _is_float(self._d(t)) else "int64")
 
     def meanDim(self, t, dim, keepdim):
         x = _F(self._g(t))

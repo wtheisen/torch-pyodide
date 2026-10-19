@@ -9,6 +9,23 @@ from torch.tensor_factories_ops import tensor_from_data
 from torch.tensor_shape_utils import _flatten, _infer_shape
 
 
+
+def _cpu() -> bool:
+    from .._runtime import backend
+    return backend() == "cpu"
+
+
+def _np(x: Tensor):
+    import numpy as np
+    return np.asarray(x.detach().numpy(), dtype=np.float64)
+
+
+def _t(a, like: Tensor) -> Tensor:
+    import numpy as np
+    a = np.asarray(a)
+    return torch.tensor(a.tolist() if a.ndim else a.item(), dtype=like.dtype)
+
+
 def _eigh_jacobi_cpu(x: Tensor) -> tuple[Tensor, Tensor]:
     """Eigen-decomposition for symmetric matrices via Jacobi iteration (CPU)."""
     n = x.shape[-1]
@@ -103,7 +120,12 @@ def _eigh_jacobi(x: Tensor) -> tuple[Tensor, Tensor]:
         return _eigh_jacobi_cpu(x)
 
 
-def svd(x: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+def svd(x: Tensor, full_matrices: bool = True) -> tuple[Tensor, Tensor, Tensor]:
+    """ai2ai: on the CPU backend this is numpy's LAPACK SVD (no autograd)."""
+    if _cpu():
+        import numpy as np
+        u, s_, vh = np.linalg.svd(_np(x), full_matrices=full_matrices)
+        return _t(u, x), _t(s_, x), _t(vh, x)
     from ..tensor_ops import reciprocal_from_tensor
 
     m, n = x.shape
@@ -158,7 +180,12 @@ def qr(x: Tensor, mode: str = "reduced") -> tuple[Tensor, Tensor]:
     return Q, R
 
 
-def eigh(x: Tensor) -> tuple[Tensor, Tensor]:
+def eigh(x: Tensor, UPLO: str = "L") -> tuple[Tensor, Tensor]:
+    """ai2ai: on the CPU backend this is numpy's eigh (ascending eigenvalues, no autograd)."""
+    if _cpu():
+        import numpy as np
+        w, v = np.linalg.eigh(_np(x), UPLO=UPLO)
+        return _t(w, x), _t(v, x)
     return _eigh_jacobi(x)
 
 
@@ -178,7 +205,7 @@ def solve(A: Tensor, B: Tensor) -> Tensor:
 def pinv(x: Tensor, rcond: float = 1e-15) -> Tensor:
     from ..tensor_ops import reciprocal_from_tensor, where_from_tensors, zeros_from_shape
 
-    U, s, Vt = svd(x)
+    U, s, Vt = svd(x, full_matrices=False)
     smax = float(s.max().item())
     tol = rcond * smax if smax > 0 else rcond
     s_inv = where_from_tensors(

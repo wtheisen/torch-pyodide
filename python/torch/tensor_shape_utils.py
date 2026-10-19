@@ -15,12 +15,14 @@ def _scalar_to_tensor(value: float, dtype: str = "float32") -> Tensor:
     from ._tensor import Tensor
     from .tensor_ops import _js_meta_to_tuple
     runtime = _get_runtime()
-    meta = _run_js_awaitable(runtime.zeros([1], dtype))
+    # ai2ai: on the CPU backend a Python scalar is a 0-d tensor, so 0-d + scalar stays 0-d
+    shape = [] if getattr(runtime, "backend", None) == "cpu" else [1]
+    meta = _run_js_awaitable(runtime.zeros(shape, dtype))
     t_id, _, _ = _js_meta_to_tuple(meta)
     # Put the value in
     meta2 = _run_js_awaitable(runtime.fill(t_id, float(value)))
     t_id2, _, _ = _js_meta_to_tuple(meta2)
-    return Tensor(t_id2, [1], dtype)
+    return Tensor(t_id2, shape, dtype)
 
 
 def _infer_shape(data: object) -> list[int]:

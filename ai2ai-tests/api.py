@@ -236,3 +236,28 @@ def setitem():
 
 
 T("setitem_autograd", setitem)
+
+
+# in-place arithmetic, 0-d scalars, integer sums, LAPACK-backed eigh/svd
+def inplace():
+    a = torch.tensor(2.)
+    x = M.clone() if hasattr(M, "clone") else M * 1
+    y = x
+    x -= 1
+    x.mul_(2)
+    C = torch.zeros(3, 3)
+    for i, j in [(0, 1), (1, 2), (0, 1)]:
+        C[i, j] += 1
+    w = det((4,), 1.0, 32).requires_grad_()
+    xs, ys = det((5, 4), 1.0, 33), det((5,), 1.0, 34)
+    for _ in range(3):
+        loss = ((xs @ w - ys) ** 2).mean()
+        loss.backward()
+        with torch.no_grad():
+            w -= 0.1 * w.grad
+            w.grad.zero_()
+    S = det((4, 3), 1.0, 35)
+    return [list((a + 1).shape), y, C, (M > 0).sum(), w, torch.linalg.eigh(S.T @ S)[0], torch.linalg.svd(S)[1]]
+
+
+T("inplace_linalg", inplace)

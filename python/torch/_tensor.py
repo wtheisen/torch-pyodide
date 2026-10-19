@@ -1478,6 +1478,51 @@ class Tensor:
         from ._tensor_indexing import getitem_from_tensor
         return getitem_from_tensor(self, key)
 
+    # ── in-place arithmetic (ai2ai): x -= y changes x itself, as in PyTorch ──
+    def _inplace(self, fn) -> "Tensor":
+        import copy
+        from .autograd import is_grad_enabled
+        if not is_grad_enabled():
+            res = fn(self)
+            if res._dtype != self._dtype:
+                res = res.to(self._dtype)
+            self._set(res.detach())
+            return self
+        if self._requires_grad and self._node is None:
+            raise RuntimeError("a leaf Variable that requires grad is being used in an in-place operation.")
+        old = copy.copy(self)
+        if old._node is not None:   # the earlier graph now ends at the copy
+            old._node.tensor = old
+        res = fn(old)
+        if res._dtype != self._dtype:
+            res = res.to(self._dtype)
+        self._set(res)
+        self._node = res._node
+        self._requires_grad = res._requires_grad
+        if res._node is not None:
+            res._node.tensor = self
+        return self
+
+    def __iadd__(self, other): return self._inplace(lambda t: t + other)
+    def __isub__(self, other): return self._inplace(lambda t: t - other)
+    def __imul__(self, other): return self._inplace(lambda t: t * other)
+    def __itruediv__(self, other): return self._inplace(lambda t: t / other)
+    def __ipow__(self, other): return self._inplace(lambda t: t ** other)
+    def add_(self, other, alpha=1): return self._inplace(lambda t: t + other * alpha if alpha != 1 else t + other)
+    def sub_(self, other, alpha=1): return self._inplace(lambda t: t - other * alpha if alpha != 1 else t - other)
+    def mul_(self, other): return self._inplace(lambda t: t * other)
+    def div_(self, other): return self._inplace(lambda t: t / other)
+    def pow_(self, other): return self._inplace(lambda t: t ** other)
+    def neg_(self): return self._inplace(lambda t: -t)
+    def abs_(self): return self._inplace(lambda t: t.abs())
+    def sqrt_(self): return self._inplace(lambda t: t.sqrt())
+    def exp_(self): return self._inplace(lambda t: t.exp())
+    def log_(self): return self._inplace(lambda t: t.log())
+    def clamp_(self, min=None, max=None): return self._inplace(lambda t: t.clamp(min, max))
+    def relu_(self): return self._inplace(lambda t: t.relu())
+    def sigmoid_(self): return self._inplace(lambda t: t.sigmoid())
+    def tanh_(self): return self._inplace(lambda t: t.tanh())
+
     def __setitem__(self, key: object, value: object) -> None:
         from ._tensor_indexing import setitem_from_tensor
         setitem_from_tensor(self, key, value)
