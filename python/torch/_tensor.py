@@ -210,7 +210,9 @@ class Tensor:
         from .autograd import _backward_from_tensor
         _backward_from_tensor(self, gradient, retain_graph, create_graph)
 
-    def to(self, dtype: str, device: object = None) -> "Tensor":
+    def to(self, dtype: str = None, device: object = None) -> "Tensor":
+        if type(dtype).__name__ == "device" or (isinstance(dtype, str) and dtype.split(":")[0] in ("cpu", "cuda", "mps")):
+            dtype = None  # ai2ai: x.to(device) / x.to("cpu"): everything is on the CPU already
         if dtype is not None:
             dtype = str(dtype).replace("torch.", "")
         rt_cast = None

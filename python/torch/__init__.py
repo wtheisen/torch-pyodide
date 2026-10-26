@@ -1881,3 +1881,28 @@ def set_printoptions(precision: int | None = None, threshold=None, edgeitems=Non
         import builtins
         _PRINT["precision"] = builtins.int(precision)
     _PRINT["sci_mode"] = sci_mode
+
+
+class device:
+    """ai2ai: torch.device. Everything runs on the CPU in the browser, so this only names a device."""
+
+    def __init__(self, type="cpu", index=None):
+        if isinstance(type, device):
+            type, index = type.type, type.index
+        t = str(type)
+        if ":" in t:
+            t, i = t.split(":", 1)
+            index = int(i)
+        self.type, self.index = t, index
+
+    def __str__(self):
+        return self.type if self.index is None else "%s:%d" % (self.type, self.index)
+
+    def __repr__(self):
+        return "device(type='%s'%s)" % (self.type, "" if self.index is None else ", index=%d" % self.index)
+
+    def __eq__(self, other):
+        return str(self) == str(other)
+
+    def __hash__(self):
+        return hash(str(self))
